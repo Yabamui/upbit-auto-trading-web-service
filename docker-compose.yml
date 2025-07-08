@@ -3,6 +3,7 @@ version: '3.8'
 services:
   # SvelteKit application
   upbit-trading-app:
+    image: upbit-trading-app:latest
     build:
       context: .
       dockerfile: Dockerfile
