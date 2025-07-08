@@ -1,9 +1,7 @@
-import type {
-	AiResponsesData,
-	AiResponsesTodayInferenceData
-} from '$lib/common/models/AiResponsesData';
+import type { AiLatestInferenceData, AiResponsesData } from '$lib/common/models/AiResponsesData';
 import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
-import type { AiModelEntity } from '$lib/server/entities/AiModelEntity';
+import moment from 'moment/moment';
+import { UPBitCandleUnitEnum } from '$lib/common/enums/UPBitCandleEnum';
 
 export interface AiResponsesEntity {
 	id: number;
@@ -13,33 +11,45 @@ export interface AiResponsesEntity {
 	ai_prompts_id: number;
 	ai_response_models_id: number | null;
 	response: object;
-	candle_type: string;
+	candle_unit: string;
 	candle_count: number;
-	candle_time_zone: string
-	candle_date_time_kst_begin: string;
-	candle_date_time_kst_end: string;
+	candle_time_zone: string;
+	candle_date_time_begin: string;
+	candle_date_time_end: string;
 	created_at: Date;
 	updated_at: Date;
 	deleted_at: Date | null;
 }
 
-export interface AiResponseTodayInferenceEntity {
+export interface AiLatestInferenceEntity {
+	id: number;
+	user_id: number;
 	market: string;
-	korean_name: string;
+	ai_model_id: number;
+	ai_prompts_id: number;
+	ai_response_models_id: number;
+	candle_unit: string;
+	candle_count: number;
+	candle_time_zone: string;
+	candle_date_time_begin: string;
+	candle_date_time_end: string;
 	created_at: Date;
-	candle_type: string;
+	updated_at: Date;
+	total_judgement: string;
+	total_judgement_kr: string;
 	date: string;
 	time: string;
-	judgement_basis_kr: string;
-	evaluation: string;
+	low_price: number;
+	high_price: number;
 	open_price: number;
 	close_price: number;
-	high_price: number;
-	low_price: number;
+	evaluation: string;
+	judgement_basis: string;
+	judgement_basis_kr: string;
 }
 
 export const AiResponsesEntityUtils = {
-	toAiResponsesData: (entity: AiResponsesEntity, aiModelEntity: AiModelEntity): AiResponsesData => {
+	toAiResponsesData: (entity: AiResponsesEntity): AiResponsesData => {
 		return {
 			id: entity.id,
 			userId: entity.user_id,
@@ -48,36 +58,50 @@ export const AiResponsesEntityUtils = {
 			aiPromptsId: entity.ai_prompts_id,
 			aiResponseModesId: entity.ai_response_models_id,
 			response: entity.response,
-			candleType: entity.candle_type,
+			candleUnit: entity.candle_unit,
 			candleCount: entity.candle_count,
 			candleTimeZone: entity.candle_time_zone,
-			candleDateTimeKstBegin: entity.candle_date_time_kst_begin,
-			candleDateTimeKstEnd: entity.candle_date_time_kst_end,
+			candleDateTimeBegin: entity.candle_date_time_begin,
+			candleDateTimeEnd: entity.candle_date_time_end,
 			createdAt: CurrentDateUtils.toFormatStringByDate(entity.created_at),
 			updatedAt: CurrentDateUtils.toFormatStringByDate(entity.updated_at),
-			deletedAt: CurrentDateUtils.toFormatStringByDate(entity.deleted_at),
-
-			aiCode: aiModelEntity.ai_code,
-			aiName: aiModelEntity.ai_name,
-			aiModelCode: aiModelEntity.model_code,
-			aiModelName: aiModelEntity.model_name
+			deletedAt: CurrentDateUtils.toFormatStringByDate(entity.deleted_at)
 		};
 	},
+	toAiLatestInferenceData: (
+		entity: AiLatestInferenceEntity,
+		judgementYn: boolean
+	): AiLatestInferenceData => {
+		const dateTime: string = CurrentDateUtils.getDateTimeStringAndSetTime(
+			entity.date,
+			entity.time,
+			entity.candle_unit
+		);
 
-	toAiResponseTodayInferenceData: (entity: AiResponseTodayInferenceEntity): AiResponsesTodayInferenceData => {
 		return {
+			id: entity.id,
+			userId: entity.user_id,
 			market: entity.market,
-			koreanName: entity.korean_name,
+			aiModelId: entity.ai_model_id,
+			aiPromptsId: entity.ai_prompts_id,
+			aiResponseModesId: entity.ai_response_models_id,
+			candleUnit: entity.candle_unit,
+			candleCount: entity.candle_count,
+			candleTimeZone: entity.candle_time_zone,
+			candleDateTimeBegin: entity.candle_date_time_begin,
+			candleDateTimeEnd: entity.candle_date_time_end,
 			createdAt: CurrentDateUtils.toFormatStringByDate(entity.created_at),
-			candleType: entity.candle_type,
-			date: entity.date,
-			time: entity.time,
-			judgementBasisKr: entity.judgement_basis_kr,
-			evaluation: entity.evaluation,
+			updatedAt: CurrentDateUtils.toFormatStringByDate(entity.updated_at),
+			totalJudgement: judgementYn ? entity.total_judgement : '',
+			totalJudgementKr: judgementYn ? entity.total_judgement_kr : '',
+			dateTime: dateTime,
+			lowPrice: entity.low_price,
+			highPrice: entity.high_price,
 			openPrice: entity.open_price,
 			closePrice: entity.close_price,
-			highPrice: entity.high_price,
-			lowPrice: entity.low_price
+			evaluation: entity.evaluation,
+			judgementBasis: judgementYn ? entity.judgement_basis : '',
+			judgementBasisKr: judgementYn ? entity.judgement_basis_kr : ''
 		};
 	}
 };

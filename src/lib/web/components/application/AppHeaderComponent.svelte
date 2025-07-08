@@ -7,17 +7,13 @@
 		DropdownDivider,
 		DropdownHeader,
 		DropdownItem,
-		Input,
 		Navbar,
 		NavBrand,
 		NavHamburger,
 		NavLi,
 		NavUl
 	} from 'flowbite-svelte';
-	import {
-		GithubSolid,
-		SearchOutline
-	} from 'flowbite-svelte-icons';
+	import { GithubSolid } from 'flowbite-svelte-icons';
 	import { userStore } from '$lib/stores/UserStore';
 	import {
 		type AppRouteCode,
@@ -25,7 +21,7 @@
 	} from '$lib/common/enums/AppRouteCode';
 	import { page } from '$app/state';
 	import { currentMarketCodeStore } from '$lib/stores/MarketStore';
-	import { UserWebApi } from '$lib/web/api/UserWebApi';
+	import { UserWebApi } from '$lib/web/request/UserWebApi';
 	import type { ResponseObject } from '$lib/common/models/ResponseData';
 	import type { UserInfoData } from '$lib/common/models/UserInfoData';
 	import { ResponseCode } from '$lib/common/enums/ResponseCode';
@@ -38,14 +34,13 @@
 	const nonActiveClass = 'text-gray-700 hover:bg-gray-100 md:hover:bg-transparent md:border-0 md:hover:text-green-700 dark:text-gray-400 md:dark:hover:text-white dark:hover:bg-gray-700 dark:hover:text-white md:dark:hover:bg-transparent';
 
 	let activeUrl = $derived(page.url.pathname + page.url.search);
-	let appRouteCode: AppRouteCode[] = $state([]);
+	let appRouteCode: AppRouteCode[] = $state(AppRouteCodeUtils.getNavList());
 	let _userMenuDropdownOpenYn = $state(false);
 	let _signInModalOpenYn = $state(false);
 	let _signUpModalOpenYn = $state(false);
 	let _userUpdateModalOpenYn = $state(false);
 
 	$effect.pre(() => {
-		appRouteCode = AppRouteCodeUtils.getNavList();
 		const json = localStorage.getItem('user-info');
 
 		if (json) {
@@ -95,8 +90,7 @@
 
 
 <header class="flex-none mx-auto w-full border-b border-gray-200 bg-white dark:border-gray-600 dark:bg-gray-800">
-	<Navbar class="bg-white dark:bg-black text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-800 divide-gray-200 dark:divide-gray-800 px-2 sm:px-4 w-full py-1.5">
-		<NavHamburger />
+	<Navbar class="bg-white dark:bg-black text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-800 divide-gray-200 dark:divide-gray-800 px-4 w-full py-1.5">
 
 		<NavBrand href="/">
 			<span class="self-center whitespace-nowrap text-xl font-semibold dark:text-white">
@@ -104,24 +98,18 @@
 			</span>
 		</NavBrand>
 
-		<div class="flex md:order-2 gap-2">
-			<Button color="none"
-							data-collapse-toggle="mobile-menu-3"
-							aria-controls="mobile-menu-3"
-							aria-expanded="false"
-							class="md:hidden rounded-lg text-sm p-2.5 me-1
-								text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700">
-				<SearchOutline class="w-5 h-5" />
-			</Button>
-			<div class="hidden relative md:block">
-				<div class="flex absolute inset-y-0 start-0 items-center ps-3 pointer-events-none">
-					<SearchOutline class="w-4 h-4" />
-				</div>
-				<Input id="search-navbar"
-							 class="ps-10"
-							 placeholder="Search..." />
-			</div>
+		<NavUl activeUrl={activeUrl}
+					 {activeClass}
+					 {nonActiveClass}>
+			{#each appRouteCode as routeCode}
+				{@const href = routeCode.href + "?code=" + $currentMarketCodeStore}
+				<NavLi href={href}>
+					{routeCode.name}
+				</NavLi>
+			{/each}
+		</NavUl>
 
+		<div class="flex md:order-2 gap-2">
 			<Button color="none"
 							data-collapse-toggle="mobile-menu-3"
 							aria-controls="mobile-menu-3"
@@ -171,17 +159,6 @@
 				{/if}
 			</Dropdown>
 		</div>
-
-		<NavUl activeUrl={activeUrl}
-					 {activeClass}
-					 {nonActiveClass}>
-			{#each appRouteCode as routeCode}
-				{@const href = routeCode.href + "?code=" + $currentMarketCodeStore}
-				<NavLi href={href}>
-					{routeCode.name}
-				</NavLi>
-			{/each}
-		</NavUl>
 	</Navbar>
 </header>
 

@@ -3,7 +3,7 @@
 	import { onMount } from 'svelte';
 	import moment from 'moment/moment';
 	import type { CandleData } from '$lib/common/models/CandleData';
-	import { CandleWebApi } from '$lib/web/api/CandleWebApi';
+	import { CandleWebApi } from '$lib/web/request/CandleWebApi';
 	import { ResponseCode } from '$lib/common/enums/ResponseCode';
 	import { currentMarketCodeStore } from '$lib/stores/MarketStore';
 	import {
@@ -28,7 +28,7 @@
 	const _chartCount: number = 200;
 
 	let _initYn = false;
-	let _candleUnitCode: UPBitCandleUnitCodeData = $state.raw(UPBitCandleUnitEnum.minutes);
+	let _CandleUnitCode: UPBitCandleUnitCodeData = $state.raw(UPBitCandleUnitEnum.minutes);
 	let _chartDropOpenYn = $state(false);
 	let _playYn = $state(false);
 
@@ -90,7 +90,7 @@
 
 		const responseObject: ResponseObject<unknown> = await CandleWebApi.getCandleList(
 			marketCode,
-			_candleUnitCode.key,
+			_CandleUnitCode.key,
 			_chartCount,
 			''
 		);
@@ -107,11 +107,11 @@
 
 		_chartDropOpenYn = false;
 
-		if (_candleUnitCode.name === unit.name) {
+		if (_CandleUnitCode.name === unit.name) {
 			return;
 		}
 
-		_candleUnitCode = unit;
+		_CandleUnitCode = unit;
 
 		await setCandleData($currentMarketCodeStore);
 	}
@@ -124,7 +124,7 @@
 						id="candle-unit"
 						size="sm"
 						class="focus:ring-0">
-			{_candleUnitCode.name}
+			{_CandleUnitCode.name}
 			<ChevronDownOutline class="w-5 h-5 ms-2" />
 		</Button>
 		<Dropdown placement="bottom"

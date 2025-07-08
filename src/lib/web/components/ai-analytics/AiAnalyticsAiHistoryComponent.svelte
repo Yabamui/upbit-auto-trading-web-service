@@ -34,8 +34,8 @@
 	} from '$lib/common/models/AiAnalyticsData';
 	import ToastAlertComponent from '$lib/web/components/application/ToastAlertComponent.svelte';
 	import type { AiModelData } from '$lib/common/models/AiModelData';
-	import AiAnalyticsHistoryEChartsComponent
-		from '$lib/web/components/ai-analytics/AiAnalyticsHistoryEChartsComponent.svelte';
+	import AiAnalyticsAiHistoryEChartsComponent
+		from '$lib/web/components/ai-analytics/AiAnalyticsAiHistoryEChartsComponent.svelte';
 	import {
 		ChevronDownIcon,
 		ChevronUpIcon,
@@ -224,7 +224,7 @@
 				padding="none"
 				size="none">
 		{#if _eChartRequestData}
-			<AiAnalyticsHistoryEChartsComponent
+			<AiAnalyticsAiHistoryEChartsComponent
 				eChartRequestData={_eChartRequestData}
 				bind:chartClearYn={_chartClearYn} />
 		{/if}

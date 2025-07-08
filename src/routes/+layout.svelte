@@ -1,26 +1,49 @@
 <script lang="ts">
 	import '../app.css';
 	import {
+		BottomNav,
+		BottomNavItem,
 		Footer,
 		FooterCopyright,
 		FooterLink,
-		FooterLinkGroup
+		FooterLinkGroup,
+		Tooltip
 	} from 'flowbite-svelte';
 	import AppHeaderComponent from '$lib/web/components/application/AppHeaderComponent.svelte';
+	import {
+		BitcoinIcon,
+		ChartNetworkIcon,
+		HomeIcon
+	} from 'lucide-svelte';
+	import { AppRouteCode } from '$lib/common/enums/AppRouteCode';
+	import { currentMarketCodeStore } from '$lib/stores/MarketStore';
+	import { goto } from '$app/navigation';
+	import { page } from '$app/state';
 
 	let { children } = $props();
 
+	async function onClickBottomNav(url: string) {
+		if (page.url.pathname === url) {
+			return;
+		}
+
+		const href = url + '?code=' + $currentMarketCodeStore;
+
+		console.log('href', href);
+
+		await goto(href);
+	}
 </script>
 
 
 <div class="flex flex-col w-full h-full overflow-hidden">
 	<AppHeaderComponent />
 
-	<div class="flex flex-auto w-full h-full overflow-hidden">
+	<div class="relative flex flex-col w-full h-full overflow-hidden">
 		{@render children()}
 	</div>
 
-	<Footer class="w-full p-4 bg-white border-t border-gray-200 shadow md:flex md:items-center md:justify-between md:p-6 dark:bg-black dark:border-gray-600"
+	<Footer class="hidden md:flex relative w-full items-center justify-between border-t shadow"
 					footerType="logo">
 		<FooterCopyright href="/"
 										 by="Azi&Tari™"
@@ -31,5 +54,34 @@
 			<FooterLink href="/">Licensing</FooterLink>
 			<FooterLink href="/">Contact</FooterLink>
 		</FooterLinkGroup>
+	</Footer>
+
+	<Footer class="md:hidden relative w-full items-center justify-between border-t shadow p-0"
+					footerType="sitemap">
+		<BottomNav
+			activeUrl=""
+			position="relative"
+			classInner="grid-cols-4">
+			<BottomNavItem btnName="Home"
+										 href={AppRouteCode.Home.href}>
+				<HomeIcon class="w-6 h-6 mb-1" />
+				<Tooltip arrow={false}>
+					Home
+				</Tooltip>
+			</BottomNavItem>
+			<BottomNavItem btnName="거래"
+										 onclick={() => onClickBottomNav(AppRouteCode.Trade.href)}>
+				<BitcoinIcon class="w-6 h-6 mb-1" />
+			</BottomNavItem>
+			<BottomNavItem btnName="Ai"
+										 onclick={() => onClickBottomNav(AppRouteCode.AiAnalytics.href)}>
+				<ChartNetworkIcon class="w-6 h-6 mb-1" />
+			</BottomNavItem>
+			<BottomNavItem btnName="Prophet"
+										 onchange={() => onClickBottomNav(AppRouteCode.ProphetAnalytics.href)}
+										 onclick={() => onClickBottomNav(AppRouteCode.ProphetAnalytics.href)}>
+				<ChartNetworkIcon class="w-6 h-6 mb-1" />
+			</BottomNavItem>
+		</BottomNav>
 	</Footer>
 </div>

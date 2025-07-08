@@ -18,9 +18,9 @@ export const AiResponseModelsEntityUtils = {
 			aiModelId: entity.ai_model_id,
 			title: entity.title,
 			responseModelJson: entity.response_model_json,
-			createdAt: CurrentDateUtils.toFormatStringByDate(entity.created_at),
-			updatedAt: CurrentDateUtils.toFormatStringByDate(entity.updated_at),
-			deletedAt: CurrentDateUtils.toFormatStringByDate(entity.deleted_at)
+			createdAt: CurrentDateUtils.toKSTFormatStringByDate(entity.created_at),
+			updatedAt: CurrentDateUtils.toKSTFormatStringByDate(entity.updated_at),
+			deletedAt: CurrentDateUtils.toKSTFormatStringByDate(entity.deleted_at)
 		};
 	}
 };

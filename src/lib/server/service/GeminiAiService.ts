@@ -1,7 +1,7 @@
-import { type Content, GoogleGenerativeAI, type ResponseSchema } from '@google/generative-ai';
-import { GEMINI_API_KEY } from '$env/static/private';
+import { env } from '$env/dynamic/private';
 import type { AiRequestModelCase1Data } from '$lib/common/models/AiRequestModelData';
 import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
+import { type Content, GoogleGenerativeAI, type ResponseSchema } from '@google/generative-ai';
 
 export const GeminiAiService = {
 	generateContent: generateContent
@@ -19,10 +19,10 @@ async function generateContent(
 			temperature: 1.0,
 			responseMimeType: 'application/json',
 			responseSchema: responseSchema
-		}
+		};
 
-		const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-		
+		const genAI = new GoogleGenerativeAI(env.GEMINI_API_KEY);
+
 		const systemInstruction = generateSystemInstruction(systemPromptsArray);
 
 		const model = genAI.getGenerativeModel({
@@ -39,7 +39,7 @@ async function generateContent(
 
 		const result = await model.generateContent({
 			systemInstruction: systemInstruction,
-			contents: userInstruction,
+			contents: userInstruction
 		});
 
 		return result.response.text();
@@ -82,6 +82,8 @@ function generateUserInstruction(
 		return [];
 	}
 
+
+
 	return [
 		{
 			role: 'user',
@@ -90,6 +92,14 @@ function generateUserInstruction(
 					text: userPrompt
 				};
 			})
+		},
+		{
+			role: 'user',
+			parts: [
+				{
+					text: `Now Date Time : ${CurrentDateUtils.getNowISOString()}`
+				}
+			]
 		},
 		{
 			role: 'user',

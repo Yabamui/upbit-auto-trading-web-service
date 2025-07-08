@@ -1,19 +1,30 @@
+export interface MarketCurrencyCodeData {
+	code: string;
+	name: string;
+}
+
 export const MarketCurrencyCode = {
 	KRW: {
 		code: 'KRW',
-		name: '원화',
+		name: '원화'
 	},
 	BTC: {
 		code: 'BTC',
-		name: 'BTC',
+		name: 'BTC'
 	},
 	USDT: {
 		code: 'USDT',
-		name: 'USDT',
+		name: 'USDT'
 	},
 } as const;
 
 export const MarketCurrencyTypeUtils = {
+	existYn: (code: string) => {
+		return Object.values(MarketCurrencyCode)
+			.some((item: MarketCurrencyCodeData): boolean => {
+				return item.code === code;
+			});
+	},
 	getMarketCurrencyType: (marketCode: string) => {
 		if (marketCode.startsWith(MarketCurrencyCode.KRW.code)) {
 			return MarketCurrencyCode.KRW;
@@ -36,4 +47,4 @@ export const MarketCurrencyTypeUtils = {
 			MarketCurrencyCode.USDT,
 		];
 	}
-}
+};

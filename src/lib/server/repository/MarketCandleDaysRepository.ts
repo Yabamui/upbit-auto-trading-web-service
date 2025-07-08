@@ -1,319 +1,169 @@
-import type { UCandleData } from '$lib/server/models/UPbitApiData';
 import type { MarketCandleDaysEntity } from '$lib/server/entities/MarketCandleDaysEntity';
-import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
 import { connectToDB } from '$lib/server/config/PGConfig';
+import { UPBitCandleTimeZones } from '$lib/common/enums/UPBitCandleEnum';
+import { LoggingUtils } from '$lib/common/utils/LoggingUtils';
 
 export const MarketCandleDaysRepository = {
-	findAllByMarket: findAllByMarket,
-	findAllByMarketAndCount: findAllByMarketAndCount,
-	findAllByMarketAndTimestampIn: findAllByMarketAndTimestampIn,
-	findTopByMarketAndCandleDateTimeUtc: findTopByMarketAndCandleDateTimeUtc,
-	findAllByMarketAndCandleDateTimeUtcIn: findAllByMarketAndCandleDateTimeUtcIn,
-
-	countAllByMarket: countAllByMarket,
-	countAllByMarketAndCandleDateTimeUtc: countAllByMarketAndCandleDateTimeUtc,
-
-	saveOrUpdate: saveOrUpdate
+	findAllByMarketAndBeginDateTimeAndCount: findAllByMarketAndBeginDateTimeAndCount,
+	findAllByMarketCurrencyAndBeginDateTimeAndCountAndRowNumberLte:
+		findAllByMarketCurrencyAndBeginDateTimeAndCountAndRowNumberLte,
+	findAllByMarketLikeAndRowNumberLte: findAllByMarketLikeAndRowNumberLte
 };
 
-async function findAllByMarket(
+async function findAllByMarketAndBeginDateTimeAndCount(
 	market: string,
-	to: string | null,
+	candleTimeZone: string,
+	beginDateTime: string | null,
 	count: number
 ): Promise<MarketCandleDaysEntity[]> {
 	const dbConn = await connectToDB();
 
-	const query =
-		'SELECT * FROM market_candle_days WHERE true AND market = $1 order by timestamp desc limit $2';
+	let query = '';
 
-	try {
-		const result = await dbConn.query(query, [market, count]);
-
-		return result.rows;
-	} catch (error) {
-		console.error('### MarketCandleDaysRepository.findAllByMarket Error: ' + error);
-		return [];
-	} finally {
-		dbConn.release();
-	}
-}
-
-async function findAllByMarketAndCount(
-	market: string,
-	count: number
-): Promise<MarketCandleDaysEntity[]> {
-	const dbConn = await connectToDB();
-
-	const query =
-		'SELECT * FROM market_candle_days WHERE true AND market = $1 order by timestamp desc limit $2';
-
-	try {
-		const result = await dbConn.query(query, [market, count]);
-		return result.rows;
-	} catch (error) {
-		console.error('### MarketCandleDaysRepository.findAllByMarket Error: ' + error);
-		return [];
-	} finally {
-		dbConn.release();
-	}
-}
-
-async function findAllByMarketAndTimestampIn(
-	market: string,
-	timestamp: number[]
-): Promise<MarketCandleDaysEntity[]> {
-	const dbConn = await connectToDB();
-
-	const query =
-		'SELECT * FROM market_candle_days WHERE true AND market = $1 AND timestamp = ANY ($2)';
-
-	try {
-		const result = await dbConn.query(query, [market, timestamp]);
-		return result.rows;
-	} catch (error) {
-		console.error('### MarketCandleDaysRepository.findAllByMarketAndTimestamp Error: ' + error);
-		return [];
-	} finally {
-		dbConn.release();
-	}
-}
-
-async function countAllByMarket(market: string): Promise<number> {
-	const dbConn = await connectToDB();
-
-	const query = 'SELECT COUNT(*) FROM market_candle_days WHERE true AND market = $1';
-
-	try {
-		const result = await dbConn.query(query, [market]);
-
-		return parseInt(result.rows[0].count);
-	} catch (error) {
-		console.error('### MarketCandleDaysRepository.countAllByMarket Error: ' + error);
-		return 0;
-	} finally {
-		dbConn.release();
-	}
-}
-
-async function findTopByMarketAndCandleDateTimeUtc(market: string, to: string) {
-	const dbConn = await connectToDB();
-
-	const query = `select *
-                 from market_candle_days
-                 where market = $1
-                   and candle_date_time_utc = $2
-                 limit 1`;
-
-	try {
-		const result = await dbConn.query(query, [market, to]);
-		return result.rows[0];
-	} catch (error) {
-		console.error(
-			'### MarketCandleDaysRepository.findTopByMarketAndCandleDateTimeUtc Error: ' + error
-		);
-		return null;
-	} finally {
-		dbConn.release();
-	}
-}
-
-async function findAllByMarketAndCandleDateTimeUtcIn(
-	market: string,
-	candleDateTimeUtc: string[]
-): Promise<MarketCandleDaysEntity[]> {
-	const dbConn = await connectToDB();
-
-	const query = `SELECT *
-                 FROM market_candle_days
-                 WHERE true
-                   AND market = $1
-                   AND candle_date_time_utc = ANY ($2)`;
-
-	try {
-		const result = await dbConn.query(query, [market, candleDateTimeUtc]);
-		return result.rows;
-	} catch (error) {
-		console.error(
-			'### MarketCandleDaysRepository.findAllByMarketAndCandleDateTimeUtcIn Error: ' + error
-		);
-		return [];
-	} finally {
-		dbConn.release();
-	}
-}
-
-async function countAllByMarketAndCandleDateTimeUtc(
-	market: string,
-	candleDateTimeUtc: string
-): Promise<number> {
-	const dbConn = await connectToDB();
-
-	const query = `SELECT COUNT(*)
-                 FROM market_candle_days
-                 WHERE true
-                   AND market = $1
-                   AND candle_date_time_utc = $2`;
-
-	try {
-		const result = await dbConn.query(query, [market, candleDateTimeUtc]);
-		return parseInt(result.rows[0].count);
-	} catch (error) {
-		console.error(
-			'### MarketCandleDaysRepository.countAllByMarketAndCandleDateTimeUtc Error: ' + error
-		);
-		return 0;
-	} finally {
-		dbConn.release();
-	}
-}
-
-async function saveOrUpdate(market: string, uCandleDataList: UCandleData[]): Promise<number> {
-	const marketCandleDaysEntities: MarketCandleDaysEntity[] =
-		await MarketCandleDaysRepository.findAllByMarketAndCandleDateTimeUtcIn(
-			market,
-			uCandleDataList.map((item) => item.candle_date_time_utc)
-		);
-
-	const candleDateTimeUtcSet = new Set<number>(
-		marketCandleDaysEntities.map((item) =>
-			CurrentDateUtils.toUnixTimestampByDate(item.candle_date_time_utc)
-		)
-	);
-
-	const updateRecord: Record<string, UCandleData> = {};
-	const insertList = [];
-
-	for (const item of uCandleDataList) {
-		const unixTimestamp = CurrentDateUtils.toUnixTimestampByString(item.candle_date_time_utc);
-
-		if (candleDateTimeUtcSet.has(unixTimestamp)) {
-			updateRecord[item.candle_date_time_utc] = item;
-			continue;
-		}
-
-		insertList.push([
-			item.timestamp,
-			item.market,
-			item.candle_date_time_utc,
-			item.candle_date_time_kst,
-			item.opening_price,
-			item.high_price,
-			item.low_price,
-			item.trade_price,
-			item.candle_acc_trade_price,
-			item.candle_acc_trade_volume,
-			item.prev_closing_price || 0,
-			item.change_price || 0,
-			item.change_rate || 0,
-			item.converted_trade_price || 0
-		]);
-	}
-
-	const insertResult = await insertBulkMarketCandleDays(insertList);
-	const updateResult = await updateMarketCandleDays(updateRecord);
-
-	if (insertResult && updateResult) {
-		return await countAllByMarket(market);
+	if (UPBitCandleTimeZones.utc === candleTimeZone) {
+		query = `
+        SELECT *
+        FROM market_candle_days
+        WHERE true
+          and market = $1
+          and ($2::timestamp is null or candle_date_time_utc <= $2::timestamp)
+        ORDER BY candle_date_time_utc desc
+		`;
 	} else {
-		return 0;
+		query = `
+        SELECT *
+        FROM market_candle_days
+        WHERE true
+          and market = $1
+          and ($2::timestamp is null or candle_date_time_kst <= $2::timestamp)
+        ORDER BY candle_date_time_kst desc
+		`;
 	}
-}
 
-async function insertBulkMarketCandleDays(list: unknown[][]): Promise<boolean> {
-	if (list.length === 0) {
-		return true;
+	if (count > 0) {
+		query += `
+				LIMIT $3
+		`;
 	}
-
-	const values = list
-		.map((_, i) => {
-			const v = _.map((__, j) => `$${i * 14 + j + 1}`).join(', ');
-
-			return `(${v})`;
-		})
-		.join(',');
-
-	const query = `INSERT INTO market_candle_days
-                 (timestamp,
-                  market,
-                  candle_date_time_utc,
-                  candle_date_time_kst,
-                  opening_price,
-                  high_price,
-                  low_price,
-                  trade_price,
-                  candle_acc_trade_price,
-                  candle_acc_trade_volume,
-                  prev_closing_price,
-                  change_price,
-                  change_rate,
-                  converted_trade_price)
-                 VALUES ${ values }`;
-
-	const dbConn = await connectToDB();
 
 	try {
-		await dbConn.query(query, list.flat());
-		return true;
+		let result;
+
+		if (count > 0) {
+			result = await dbConn.query(query, [market, beginDateTime, count]);
+		} else {
+			result = await dbConn.query(query, [market, beginDateTime]);
+		}
+
+		if (!result || result.rowCount === 0) {
+			return [];
+		}
+
+		return result.rows;
 	} catch (error) {
-		console.error('### CandleInfoInsertTest Error: ' + error);
-		return false;
+		console.error(error);
+		return [];
 	} finally {
 		dbConn.release();
 	}
 }
 
-async function updateMarketCandleDays(
-	uCandleDataRecord: Record<string, UCandleData>
-): Promise<boolean> {
-	const updateQuery = `
-      UPDATE market_candle_days
-      SET timestamp               = $1,
-          market                  = $2,
-          candle_date_time_utc    = $3,
-          candle_date_time_kst    = $4,
-          opening_price           = $5,
-          high_price              = $6,
-          low_price               = $7,
-          trade_price             = $8,
-          candle_acc_trade_price  = $9,
-          candle_acc_trade_volume = $10,
-          prev_closing_price      = $11,
-          change_price            = $12,
-          change_rate             = $13,
-          converted_trade_price   = $14
-      WHERE market = $2
-        AND candle_date_time_utc = $3`;
-
+async function findAllByMarketCurrencyAndBeginDateTimeAndCountAndRowNumberLte(
+	marketCurrency: string,
+	candleTimeZone: string,
+	beginDateTime: string | null,
+	count: number
+): Promise<MarketCandleDaysEntity[]> {
 	const dbConn = await connectToDB();
 
-	for (const key of Object.keys(uCandleDataRecord)) {
-		const item = uCandleDataRecord[key];
+	let query = '';
 
-		const values = [
-			item.timestamp,
-			item.market,
-			item.candle_date_time_utc,
-			item.candle_date_time_kst,
-			item.opening_price,
-			item.high_price,
-			item.low_price,
-			item.trade_price,
-			item.candle_acc_trade_price,
-			item.candle_acc_trade_volume,
-			item.prev_closing_price || 0,
-			item.change_price || 0,
-			item.change_rate || 0,
-			item.converted_trade_price || 0
-		];
-
-		try {
-			await dbConn.query(updateQuery, values);
-		} catch (error) {
-			console.error('### MarketCandleDaysRepository.updateMarketCandleDays Error: ' + error);
-			break;
-		}
+	if (UPBitCandleTimeZones.utc === candleTimeZone) {
+		query = `
+        with query_result as
+                 (select *,
+                         row_number() over (partition by market order by timestamp desc) as row_number
+                  from market_candle_days
+                  where true
+                    and market like $1
+                    and ($2::timestamp is null or candle_date_time_utc <= $2::timestamp))
+        select *
+        from query_result
+        where true
+		`;
+	} else {
+		query = `
+        with query_result as
+                 (select *,
+                         row_number() over (partition by market order by timestamp desc) as row_number
+                  from market_candle_days
+                  where true
+                    and market like $1
+                    and ($2::timestamp is null or candle_date_time_kst <= $2::timestamp))
+        select *
+        from query_result
+        where true
+		`;
 	}
 
-	dbConn.release();
-	return true;
+	if (count > 0) {
+		query += `
+				and row_number <= $3
+		`;
+	}
+
+	try {
+		let result;
+
+		if (count > 0) {
+			result = await dbConn.query(query, [`${marketCurrency}%`, beginDateTime, count]);
+		} else {
+			result = await dbConn.query(query, [`${marketCurrency}%`, beginDateTime]);
+		}
+
+		if (!result || result.rowCount === 0) {
+			return [];
+		}
+
+		return result.rows;
+	} catch (error) {
+		LoggingUtils.error(
+			'MarketCandleDaysRepository.findAllByMarketCurrencyAndBeginDateTimeAndCountAndRowNumberLte',
+			`${error}`
+		);
+		return [];
+	} finally {
+		dbConn.release();
+	}
+}
+
+async function findAllByMarketLikeAndRowNumberLte(marketCurrency: string, rowNumber: number) {
+	const dbConn = await connectToDB();
+
+	const query = `
+      with query_result as
+               (select *,
+                       row_number() over (partition by market order by timestamp desc) as row_number
+                from market_candle_days
+                where true
+                  and market like $1)
+      select *
+      from query_result
+      where row_number <= $2
+	`;
+
+	try {
+		const result = await dbConn.query(query, [`${marketCurrency}%`, rowNumber]);
+
+		if (!result || result.rowCount === 0) {
+			return [];
+		}
+
+		return result.rows as MarketCandleDaysEntity[];
+	} catch (error) {
+		LoggingUtils.error('MarketCandleDaysRepository.findAllByMarketLikeAndRowNumberLte', `${error}`);
+		return [];
+	} finally {
+		dbConn.release();
+	}
 }

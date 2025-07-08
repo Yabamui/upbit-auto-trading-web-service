@@ -1,11 +1,16 @@
 import forms from '@tailwindcss/forms';
 import typography from '@tailwindcss/typography';
 import type { Config } from 'tailwindcss';
+import scrollbarHide from 'tailwind-scrollbar-hide'
 
 export default {
 	content: ['./src/**/*.{html,js,svelte,ts}', './node_modules/flowbite-svelte/**/*.{html,js,svelte,ts}'],
 	
-	plugins: [typography, forms],
+	plugins: [
+		typography,
+		forms,
+		scrollbarHide,
+	],
 	
 	darkMode: 'class',
 	// darkMode: ['class', '[data-mode="dark"]'],

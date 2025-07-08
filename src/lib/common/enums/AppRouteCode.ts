@@ -11,13 +11,13 @@ export const AppRouteCode = {
 		href: '/login',
 		name: '로그인',
 	},
-	Analytics: {
-		href: '/analytics',
-		name: '분석',
+	AiAnalytics: {
+		href: '/ai-analytics',
+		name: 'AI 분석',
 	},
-	Test: {
-		href: '/test',
-		name: 'UI 테스트',
+	ProphetAnalytics: {
+		href: '/prophet-analytics',
+		name: 'Prophet 분석',
 	},
 }
 
@@ -27,7 +27,8 @@ export const AppRouteCodeUtils = {
 	getNavList: () => {
 		return [
 			AppRouteCode.Trade,
-			AppRouteCode.Analytics
+			AppRouteCode.AiAnalytics,
+			AppRouteCode.ProphetAnalytics,
 		];
 	}
 }

@@ -1,9 +1,6 @@
 import { ResponseUtils } from '$lib/common/utils/ResponseUtils';
 import { ResponseCode } from '$lib/common/enums/ResponseCode';
-import { type CandleData } from '$lib/common/models/CandleData';
-import { ApiPathCode } from '$lib/common/enums/ApiPathCode';
-import { CandleService } from '$lib/server/service/CandleService';
-import type { IndicatorAnalyzeData } from '$lib/common/models/TechnicalIndicatorData';
+import { IndonesiaFinancialService } from '$lib/server/service/IndonesiaFinancialService';
 
 /**
  * GET Request
@@ -14,99 +11,91 @@ import type { IndicatorAnalyzeData } from '$lib/common/models/TechnicalIndicator
 export const GET = async ({ params, url }): Promise<Response> => {
 	const path = params.path;
 
-	if (ApiPathCode.candleList.path === path) {
-		return await getCandleDataList(url);
+	if (path === 'financial-statements') {
+		return await getReportList(url);
 	}
 
-	if (ApiPathCode.candleSavedList.path === path) {
-		return await getSavedCandleDataList(url);
+	return ResponseUtils.error(ResponseCode.internalServerError);
+};
+
+async function getReportList(url: URL) {
+	const year = url.searchParams.get('year');
+	const period = url.searchParams.get('period');
+
+	if (!year || !period) {
+		return ResponseUtils.error(ResponseCode.wrongParameter);
+	}
+
+	const result = await IndonesiaFinancialService.getReportList(Number(year), period);
+
+	return ResponseUtils.ok(result);
+}
+
+/**
+ * POST Request
+ * @param request
+ * @constructor
+ */
+export const POST = async ({ params, request }): Promise<Response> => {
+	const path = params.path;
+
+	console.log(path);
+
+	if (path === 'financial-statements') {
+		return await createReport(request);
 	}
 	
-	if (ApiPathCode.candleSavedListByMarketCurrency.path === path) {
-		return await getSavedCandleDataListByMarketCurrency(url);
+	if (path === 'financial-statements-upload') {
+		return await uploadReportExcel(request);
 	}
 	
-	if (ApiPathCode.candleTechnicalIndicatorAnalyze.path === path) {
-		return await getCandleTechnicalIndicatorAnalyze(url);
+	if (path === 'financial-statements-excel-summary') {
+		return await requestCreateExcelMerge(request);
 	}
 
 	return ResponseUtils.error(ResponseCode.wrongParameter);
 };
 
-async function getCandleDataList(url: URL) {
-	const market = url.searchParams.get('market');
-	const candleUnit = url.searchParams.get('candleUnit');
-	const candleCount = url.searchParams.get('candleCount');
-	const to = url.searchParams.get('to');
+async function createReport(request: Request): Promise<Response> {
+	const body = await request.json();
 
-	if (!market || !candleUnit || !candleCount) {
+	const reportJson = body.reportJson as string | undefined;
+
+	if (!reportJson) {
 		return ResponseUtils.error(ResponseCode.wrongParameter);
 	}
 
-	const candleDataList: CandleData[] = await CandleService.getCandleDataList(
-		market,
-		candleUnit,
-		parseInt(candleCount),
-		to || ''
-	);
+	const result: string | undefined = await IndonesiaFinancialService.createReport(reportJson);
 
-	return ResponseUtils.ok(candleDataList);
+	return ResponseUtils.ok(result);
 }
 
-async function getSavedCandleDataList(url: URL) {
-	const market = url.searchParams.get('market');
-	const candleUnit = url.searchParams.get('candleUnit');
-	const candleTimeZone = url.searchParams.get('candleTimeZone');
-	const candleCount = url.searchParams.get('candleCount');
-	const to = url.searchParams.get('to');
+async function uploadReportExcel(request: Request): Promise<Response> {
+	
+	const formData = await request.formData();
+	const file = formData.get('file') as File | null;
 
-	if (!market || !candleUnit || !candleTimeZone) {
+	if (!file) {
 		return ResponseUtils.error(ResponseCode.wrongParameter);
 	}
 
-	const candleDataList: CandleData[] = await CandleService.getSavedCandleDataList(
-		market,
-		candleUnit,
-		candleTimeZone,
-		candleCount ? parseInt(candleCount) : 0,
-		to || null,
-	);
+	const result: string | undefined = await IndonesiaFinancialService.uploadReportExcel(file);
 
-	return ResponseUtils.ok(candleDataList);
+	return ResponseUtils.ok(result);
 }
 
-async function getSavedCandleDataListByMarketCurrency(url: URL) {
-	const marketCurrency = url.searchParams.get('marketCurrency');
-	const candleUnit = url.searchParams.get('candleUnit');
-	const candleTimeZone = url.searchParams.get('candleTimeZone');
-	const candleCount = url.searchParams.get('candleCount');
-	const to = url.searchParams.get('to') || null;
+async function requestCreateExcelMerge(request: Request): Promise<Response> {
+	const body = await request.json();
 
-	if (!marketCurrency || !candleUnit || !candleTimeZone || !candleCount) {
+	const industry = body.industry as string | undefined;
+	const year = body.year as number | undefined;
+	const period = body.period as string | undefined;
+
+	if (!industry || !year || !period) {
 		return ResponseUtils.error(ResponseCode.wrongParameter);
 	}
 
-	const candleDataList: CandleData[] = await CandleService.getSavedCandleDataListByMarketCurrency(
-		marketCurrency,
-		candleUnit,
-		candleTimeZone,
-		Number(candleCount),
-		to,
-	);
+	const result: string | undefined = await IndonesiaFinancialService.requestCreateExcelMerge(industry, year, period);
 
-	return ResponseUtils.ok(candleDataList);
-}
-
-async function getCandleTechnicalIndicatorAnalyze(url: URL) {
-	const marketCurrency = url.searchParams.get('marketCurrency');
-	
-	if (!marketCurrency) {
-		return ResponseUtils.error(ResponseCode.wrongParameter);
-	}
-	
-	const indicatorAnalyzeDataList: IndicatorAnalyzeData[] = await CandleService.getCandleTechnicalIndicatorAnalyze(
-		marketCurrency,
-	);
-	
-	return ResponseUtils.ok(indicatorAnalyzeDataList);
+	return ResponseUtils.ok(result);
 }

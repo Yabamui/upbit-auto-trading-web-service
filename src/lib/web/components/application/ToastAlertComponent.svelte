@@ -2,9 +2,8 @@
 	import { Toast } from 'flowbite-svelte';
 	import { CloseCircleSolid } from 'flowbite-svelte-icons';
 
-	let { alertMessage = $bindable()}: {
-		alertMessage: string,
-		toastStatus: boolean
+	let { alertMessage = $bindable() }: {
+		alertMessage: string
 	} = $props();
 
 	let _toastAlertStatus: boolean = $state(false);
@@ -12,18 +11,22 @@
 
 	$effect(() => {
 		if (alertMessage) {
-			alertTrigger(alertMessage);
+			const message = alertMessage;
+			alertMessage = '';
+
+			alertTrigger(message);
 		}
 	});
 
 	function alertTrigger(alertMessage: string) {
-		_toastAlertStatus = true;
+		console.log('alertTrigger', alertMessage);
 		_toastAlertMessageList.push(alertMessage);
+		_toastAlertStatus = true;
 
 		setTimeout(() => {
 			_toastAlertStatus = false;
 			_toastAlertMessageList = [];
-		}, 3000);
+		}, 1000 * 5);
 	}
 </script>
 
@@ -31,15 +34,15 @@
 			 align={false}
 			 dismissable={false}
 			 position="bottom-right"
-			 class="fixed"
+			 class="absolute items-center"
 			 bind:toastStatus={_toastAlertStatus}>
 	<svelte:fragment slot="icon">
 		<CloseCircleSolid class="w-5 h-5" />
 		<span class="sr-only">Error icon</span>
 	</svelte:fragment>
-	<div class="ms-3 text-sm font-normal">
+	<div class="ms-3">
 		{#each _toastAlertMessageList as _toastAlertMessage}
-			<div class="mb-2 text-sm font-normal">
+			<div class="text-sm font-normal">
 				{_toastAlertMessage}
 			</div>
 		{/each}

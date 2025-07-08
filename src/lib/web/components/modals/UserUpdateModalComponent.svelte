@@ -24,13 +24,11 @@
 </script>
 
 <Modal bind:open={modalOpenYn}
+			 title="Update user information"
 			 size="xs"
 			 autoclose={false}
 			 class="w-full">
 	<div class="flex flex-col space-y-6">
-		<h3 class="mb-4 text-xl font-medium text-gray-900 dark:text-white">
-			Update user information
-		</h3>
 		<Label class="space-y-2">
 			<span>Email</span>
 			<Input type="email"
@@ -71,10 +69,12 @@
 						 placeholder="010-xxxx-xxxx"
 						 required />
 		</Label>
+	</div>
+	<svelte:fragment slot="footer">
 		<Button type="button"
-						class="w-full1"
+						class="w-full"
 						onclick={async () => updateUser()}>
 			Sign up to your account
 		</Button>
-	</div>
+	</svelte:fragment>
 </Modal>

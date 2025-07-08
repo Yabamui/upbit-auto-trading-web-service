@@ -1,5 +1,4 @@
 import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
-import { CandleTypeZoneCode } from '$lib/common/enums/CandleTypeZoneCode';
 import type { CandleData } from '$lib/common/models/CandleData';
 import { UPBitCandleUnitEnum } from '$lib/common/enums/UPBitCandleEnum';
 
@@ -49,22 +48,11 @@ export const AiRequestModelDataUtils = {
 		data: CandleData,
 		timeZone: string
 	): AiRequestModelCase1DataItem => {
-		if (CandleTypeZoneCode.UTC === timeZone) {
-			const date = CurrentDateUtils.toDateTimeByDate(data.candleDateTimeUtc);
-			return {
-				date: CurrentDateUtils.toFormatStringByDate(date, CurrentDateUtils.dateFormat),
-				time: CurrentDateUtils.toFormatStringByDate(date, CurrentDateUtils.timeFormat),
-				highPrice: data.highPrice,
-				lowPrice: data.lowPrice,
-				openPrice: data.openingPrice,
-				closePrice: data.tradePrice
-			};
-		}
+		const nowDate = CurrentDateUtils.getNowDateTime(timeZone);
 
-		const date = CurrentDateUtils.toDateTimeByDate(data.candleDateTimeKst);
 		return {
-			date: CurrentDateUtils.toFormatStringByDate(date, CurrentDateUtils.dateFormat),
-			time: CurrentDateUtils.toFormatStringByDate(date, CurrentDateUtils.timeFormat),
+			date: CurrentDateUtils.toFormatStringByDate(nowDate, CurrentDateUtils.dateFormat),
+			time: CurrentDateUtils.toFormatStringByDate(nowDate, CurrentDateUtils.timeFormat),
 			highPrice: data.highPrice,
 			lowPrice: data.lowPrice,
 			openPrice: data.openingPrice,
@@ -73,11 +61,10 @@ export const AiRequestModelDataUtils = {
 	},
 
 	mockAiRequestModelCase1Data: (
-		candleType: string,
+		candleUnit: string,
 		candleTimeZone: string
 	): AiRequestModelCase1Data => {
-		
-		if (UPBitCandleUnitEnum.minutes.key === candleType) {
+		if (UPBitCandleUnitEnum.minutes.key === candleUnit) {
 			return {
 				market: 'KRW-BTC',
 				koreanName: '비트코인',
@@ -114,8 +101,8 @@ export const AiRequestModelDataUtils = {
 				]
 			};
 		}
-		
-		if (UPBitCandleUnitEnum.hours.key === candleType) {
+
+		if (UPBitCandleUnitEnum.hours.key === candleUnit) {
 			return {
 				market: 'KRW-BTC',
 				koreanName: '비트코인',
@@ -152,7 +139,7 @@ export const AiRequestModelDataUtils = {
 				]
 			};
 		}
-		
+
 		return {
 			market: 'KRW-BTC',
 			koreanName: '비트코인',

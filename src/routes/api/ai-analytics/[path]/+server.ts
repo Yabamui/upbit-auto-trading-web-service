@@ -6,7 +6,16 @@ import type {
 	AiPromptsCreateRequestData,
 	AiPromptsUpdateRequestData
 } from '$lib/common/models/AiPromptsData';
-import type { AiResponsesTodayInferenceData } from '$lib/common/models/AiResponsesData';
+import type {
+	AiInferenceData,
+	AiLatestInferenceData,
+	AiResponsesCreateRequestData
+} from '$lib/common/models/AiResponsesData';
+import type {
+	AiAnalyticsRequestSchedulerCreateData,
+	AiAnalyticsRequestSchedulerData,
+	AiAnalyticsRequestSchedulerUpdateData
+} from '$lib/common/models/AiAnalyticsRequestSchedulerData';
 
 /**
  * GET method
@@ -24,8 +33,16 @@ export async function GET({ params, url, cookies }) {
 		return await getAiModelList();
 	}
 
+	if (ApiPathCode.aiAnalyticsAiResponses.path === path) {
+		return await getAiResponses(userId, url);
+	}
+
 	if (ApiPathCode.aiAnalyticsAiResponsesList.path === path) {
-		return await getAiResponses(url, userId);
+		return await getAiResponsesList(url, userId);
+	}
+
+	if (ApiPathCode.aiAnalyticsAiLatestInferenceList.path === path) {
+		return await getAiLatestInferenceList(userId, url);
 	}
 
 	if (ApiPathCode.aiAnalyticsAiResponseModelsList.path === path) {
@@ -36,20 +53,45 @@ export async function GET({ params, url, cookies }) {
 		return await getAiPromptsList(url, userId);
 	}
 
-	if (ApiPathCode.aiAnalyticsAiResponsesTodayInference.path === path) {
-		return await getAiResponsesTodayInference(userId, url);
+	if (ApiPathCode.aiAnalyticsRequestSchedulerList.path === path) {
+		return await getAiAnalyticsRequestSchedulerList(userId);
 	}
 
 	return ResponseUtils.error(ResponseCode.wrongParameter);
 }
 
-async function getAiModelList() {
+async function getAiModelList(): Promise<Response> {
 	const resultList = await AiAnalyticsService.getAiModelList();
 
 	return ResponseUtils.ok(resultList);
 }
 
-async function getAiResponses(url: URL, userId: string | undefined) {
+async function getAiResponses(userId: string | undefined, url: URL): Promise<Response> {
+	if (!userId) {
+		return ResponseUtils.error(ResponseCode.unauthorized);
+	}
+
+	const aiResponsesId = url.searchParams.get('aiResponsesId');
+	const market = url.searchParams.get('market');
+
+	if (!aiResponsesId || !market) {
+		return ResponseUtils.error(ResponseCode.wrongParameter);
+	}
+
+	const aiInference: AiInferenceData | null = await AiAnalyticsService.getAiResponses(
+		parseInt(userId),
+		parseInt(aiResponsesId),
+		market
+	);
+
+	if (!aiInference) {
+		return ResponseUtils.error(ResponseCode.notFound);
+	}
+
+	return ResponseUtils.ok(aiInference);
+}
+
+async function getAiResponsesList(url: URL, userId: string | undefined): Promise<Response> {
 	if (!userId) {
 		return ResponseUtils.error(ResponseCode.unauthorized);
 	}
@@ -60,12 +102,40 @@ async function getAiResponses(url: URL, userId: string | undefined) {
 		return ResponseUtils.error(ResponseCode.wrongParameter);
 	}
 
-	const resultList = await AiAnalyticsService.getAiResponses(market, userId);
+	const resultList = await AiAnalyticsService.getAiResponsesList(market, userId);
 
 	return ResponseUtils.ok(resultList);
 }
 
-async function getAiResponseModelsList(url: URL) {
+async function getAiLatestInferenceList(userId: string | undefined, url: URL): Promise<Response> {
+	if (!userId) {
+		return ResponseUtils.error(ResponseCode.unauthorized);
+	}
+
+	const marketCurrency = url.searchParams.get('marketCurrency') || '';
+	const market = url.searchParams.get('market') || '';
+	const candleUnit = url.searchParams.get('candleUnit');
+	const candleTimeZone = url.searchParams.get('candleTimeZone');
+	const judgementYn = url.searchParams.get('judgementYn') || 'false';
+
+	if (!candleUnit || !candleTimeZone) {
+		return ResponseUtils.error(ResponseCode.wrongParameter);
+	}
+	
+	const aiLatestInferenceList: AiLatestInferenceData[] =
+		await AiAnalyticsService.getAiLatestInferenceList(
+			parseInt(userId),
+			marketCurrency,
+			market,
+			candleUnit,
+			candleTimeZone,
+			judgementYn === 'true'
+		);
+	
+	return ResponseUtils.ok(aiLatestInferenceList);
+}
+
+async function getAiResponseModelsList(url: URL): Promise<Response> {
 	const aiModelId = url.searchParams.get('aiModelId');
 
 	if (!aiModelId) {
@@ -77,38 +147,28 @@ async function getAiResponseModelsList(url: URL) {
 	return ResponseUtils.ok(resultList);
 }
 
-async function getAiPromptsList(url: URL, userId: string | undefined) {
+async function getAiPromptsList(url: URL, userId: string | undefined): Promise<Response> {
 	if (userId === undefined) {
 		return ResponseUtils.error(ResponseCode.unauthorized);
 	}
 
 	const aiModelId = url.searchParams.get('aiModelId');
 
-	if (!aiModelId) {
-		return ResponseUtils.error(ResponseCode.wrongParameter);
-	}
-
 	const resultList = await AiAnalyticsService.getAiPromptsList(
 		parseInt(userId),
-		parseInt(aiModelId)
+		aiModelId ? parseInt(aiModelId) : 0
 	);
 
 	return ResponseUtils.ok(resultList);
 }
 
-async function getAiResponsesTodayInference(userId: string | undefined, url: URL) {
+async function getAiAnalyticsRequestSchedulerList(userId: string | undefined): Promise<Response> {
 	if (!userId) {
 		return ResponseUtils.error(ResponseCode.unauthorized);
 	}
 
-	const candleType = url.searchParams.get('candleType');
-
-	if (!candleType) {
-		return ResponseUtils.error(ResponseCode.wrongParameter);
-	}
-
-	const resultList: AiResponsesTodayInferenceData[] =
-		await AiAnalyticsService.getAiResponsesTodayInference(parseInt(userId), candleType);
+	const resultList: AiAnalyticsRequestSchedulerData[] =
+		await AiAnalyticsService.getAiAnalyticsRequestSchedulerList(parseInt(userId));
 
 	return ResponseUtils.ok(resultList);
 }
@@ -124,43 +184,38 @@ export async function POST({ params, request, cookies }) {
 	const userId = cookies.get('user_id');
 	const path = params.path;
 
-	if (ApiPathCode.aiAnalyticsRequest.path === path) {
-		return await requestAiAnalytics(userId, request);
+	if (ApiPathCode.aiAnalyticsResponsesCreate.path === path) {
+		return await createAiResponses(userId, request);
 	}
 
 	if (ApiPathCode.aiAnalyticsAiPromptsCreate.path === path) {
 		return await createAiPrompts(userId, request);
 	}
 
+	if (ApiPathCode.aiAnalyticsRequestSchedulerCreate.path === path) {
+		return await createAiAnalyticsRequestScheduler(userId, request);
+	}
+
 	return ResponseUtils.error(ResponseCode.wrongParameter);
 }
 
-async function requestAiAnalytics(userId: string | undefined, request: Request) {
+async function createAiResponses(userId: string | undefined, request: Request): Promise<Response> {
 	if (!userId) {
 		return ResponseUtils.error(ResponseCode.unauthorized);
 	}
 
-	const { market, aiModelId, aiPromptId, candleType, candleCount, candleTimeZone } =
-		await request.json();
+	const body: AiResponsesCreateRequestData = await request.json();
 
-	if (!market || !aiModelId || !aiPromptId || !candleType || !candleCount || !candleTimeZone) {
+	if (!body) {
 		return ResponseUtils.error(ResponseCode.wrongParameter);
 	}
 
-	const result = await AiAnalyticsService.createAiResponses(
-		parseInt(userId),
-		market,
-		aiModelId,
-		aiPromptId,
-		candleType,
-		candleCount,
-		candleTimeZone
-	);
+	const result = await AiAnalyticsService.createAiResponses(parseInt(userId), body);
 
 	return ResponseUtils.ok(result);
 }
 
-async function createAiPrompts(userId: string | undefined, request: Request) {
+async function createAiPrompts(userId: string | undefined, request: Request): Promise<Response> {
 	if (!userId) {
 		return ResponseUtils.error(ResponseCode.unauthorized);
 	}
@@ -186,6 +241,29 @@ async function createAiPrompts(userId: string | undefined, request: Request) {
 	return ResponseUtils.ok(result);
 }
 
+async function createAiAnalyticsRequestScheduler(
+	userId: string | undefined,
+	request: Request
+): Promise<Response> {
+	if (!userId) {
+		return ResponseUtils.error(ResponseCode.unauthorized);
+	}
+
+	const createData: AiAnalyticsRequestSchedulerCreateData =
+		(await request.json()) as AiAnalyticsRequestSchedulerCreateData;
+
+	if (!createData) {
+		return ResponseUtils.error(ResponseCode.wrongParameter);
+	}
+
+	const result: number = await AiAnalyticsService.createAiAnalyticsRequestScheduler(
+		parseInt(userId),
+		createData
+	);
+
+	return ResponseUtils.ok(result);
+}
+
 /**
  * PUT method
  * @param params
@@ -201,10 +279,14 @@ export async function PUT({ params, request, cookies }) {
 		return await updateAiPrompts(userId, request);
 	}
 
+	if (ApiPathCode.aiAnalyticsRequestSchedulerUpdate.path === path) {
+		return await updateAiAnalyticsRequestScheduler(userId, request);
+	}
+
 	return ResponseUtils.error(ResponseCode.wrongParameter);
 }
 
-async function updateAiPrompts(userId: string | undefined, request: Request) {
+async function updateAiPrompts(userId: string | undefined, request: Request): Promise<Response> {
 	if (!userId) {
 		return ResponseUtils.error(ResponseCode.unauthorized);
 	}
@@ -214,7 +296,6 @@ async function updateAiPrompts(userId: string | undefined, request: Request) {
 
 	if (
 		!updateRequestData.id ||
-		!updateRequestData.userId ||
 		!updateRequestData.aiModelId ||
 		!updateRequestData.title ||
 		!updateRequestData.userPromptsList ||
@@ -223,11 +304,30 @@ async function updateAiPrompts(userId: string | undefined, request: Request) {
 		return ResponseUtils.error(ResponseCode.wrongParameter);
 	}
 
-	if (userId !== updateRequestData.userId.toString()) {
+	const result = await AiAnalyticsService.updateAiPrompts(parseInt(userId), updateRequestData);
+
+	return ResponseUtils.ok(result);
+}
+
+async function updateAiAnalyticsRequestScheduler(
+	userId: string | undefined,
+	request: Request
+): Promise<Response> {
+	if (!userId) {
 		return ResponseUtils.error(ResponseCode.unauthorized);
 	}
 
-	const result = await AiAnalyticsService.updateAiPrompts(parseInt(userId), updateRequestData);
+	const updateData: AiAnalyticsRequestSchedulerUpdateData =
+		(await request.json()) as AiAnalyticsRequestSchedulerUpdateData;
+
+	if (!updateData) {
+		return ResponseUtils.error(ResponseCode.wrongParameter);
+	}
+
+	const result = await AiAnalyticsService.updateAiAnalyticsRequestScheduler(
+		parseInt(userId),
+		updateData
+	);
 
 	return ResponseUtils.ok(result);
 }
@@ -247,10 +347,18 @@ export async function DELETE({ url, params, cookies }) {
 		return await deleteAiResponses(userId, url);
 	}
 
+	if (ApiPathCode.aiAnalyticsRequestSchedulerDelete.path === path) {
+		return await deleteAiAnalyticsRequestScheduler(userId, url);
+	}
+
+	if (ApiPathCode.aiAnalyticsAiPromptsDelete.path === path) {
+		return await deleteAiPrompts(userId, url);
+	}
+
 	return ResponseUtils.error(ResponseCode.wrongParameter);
 }
 
-async function deleteAiResponses(userId: string | undefined, url: URL) {
+async function deleteAiResponses(userId: string | undefined, url: URL): Promise<Response> {
 	if (!userId) {
 		return ResponseUtils.error(ResponseCode.unauthorized, false);
 	}
@@ -262,6 +370,44 @@ async function deleteAiResponses(userId: string | undefined, url: URL) {
 	}
 
 	const result = await AiAnalyticsService.deleteAiResponses(parseInt(userId), parseInt(id));
+
+	return ResponseUtils.ok(result);
+}
+
+async function deleteAiAnalyticsRequestScheduler(
+	userId: string | undefined,
+	url: URL
+): Promise<Response> {
+	if (!userId) {
+		return ResponseUtils.error(ResponseCode.unauthorized, false);
+	}
+
+	const schedulerId: string | null = url.searchParams.get('schedulerId');
+
+	if (!schedulerId) {
+		return ResponseUtils.error(ResponseCode.wrongParameter, false);
+	}
+
+	const result = await AiAnalyticsService.deleteAiAnalyticsRequestScheduler(
+		parseInt(userId),
+		parseInt(schedulerId)
+	);
+
+	return ResponseUtils.ok(result);
+}
+
+async function deleteAiPrompts(userId: string | undefined, url: URL): Promise<Response> {
+	if (!userId) {
+		return ResponseUtils.error(ResponseCode.unauthorized, false);
+	}
+
+	const aiPromptsId = url.searchParams.get('aiPromptsId');
+
+	if (!aiPromptsId) {
+		return ResponseUtils.error(ResponseCode.wrongParameter, false);
+	}
+
+	const result = await AiAnalyticsService.deleteAiPrompts(parseInt(userId), parseInt(aiPromptsId));
 
 	return ResponseUtils.ok(result);
 }

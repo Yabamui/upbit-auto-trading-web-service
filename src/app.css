@@ -1,3 +1,8 @@
 @import 'tailwindcss/base';
 @import 'tailwindcss/components';
 @import 'tailwindcss/utilities';
+
+
+table .left-shadow::after {
+  @apply content-[''] absolute top-0 left-full w-5 h-full bg-gradient-to-r from-white to-transparent dark:from-gray-800 dark:to-transparent;
+}

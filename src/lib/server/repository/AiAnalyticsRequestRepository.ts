@@ -43,7 +43,7 @@ async function insertAiAnalyticsRequest(
        market,
        ai_model_id,
        ai_prompts_id,
-       candle_type,
+       candle_unit,
        candle_count,
        candle_time_zone,
        request_yn)
@@ -56,7 +56,7 @@ async function insertAiAnalyticsRequest(
 			createRequestData.market,
 			createRequestData.aiModelId,
 			createRequestData.aiPromptsId,
-			createRequestData.candleType,
+			createRequestData.candleUnit,
 			createRequestData.candleCount,
 			createRequestData.candleTimeZone,
 			createRequestData.requestYn

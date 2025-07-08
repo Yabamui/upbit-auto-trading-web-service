@@ -25,12 +25,12 @@
 	} from '$lib/common/utils/EChartsOptionUtils';
 	import {
 		ChartGanttIcon,
-		ChevronLeftIcon,
 		CircleChevronLeftIcon,
 		MapPinPlusIcon
 	} from 'lucide-svelte';
 	import type { AiAnalyticsCandleEChartRequestData } from '$lib/common/models/AiAnalyticsData';
 	import { LoggingUtils } from '$lib/common/utils/LoggingUtils';
+	import Decimal from 'decimal.js';
 
 	let {
 		eChartRequestData,
@@ -43,12 +43,14 @@
 	const _markPoint: MarkPointOption = EChartsOptionUtils.getMarkPointOption();
 	const _markLine: MarkLineOption = EChartsOptionUtils.getMinMaxMarkLineOption();
 
+	let _eChartCount = $derived.by(getEChartCount);
 	let _showMarkPoint = $state(false);
 	let _showMarkLine = $state(false);
 	let _dataZoomStart = $state(50);
 	let _textColor = $derived($colorThemeStore === 'light' ? '#000' : '#ccc');
 	let _eChartsElement: HTMLDivElement | undefined = $state(undefined);
 	let _eCharts: echarts.ECharts | undefined = $state(undefined);
+	let _decimalDepth = $state(0);
 	let _candleListByDateTimeRecord: Record<string, CandleData> = $state({});
 	let _addAccTradeVolumeYn = $state(true);
 	let _addMaYn = $state(false);
@@ -92,6 +94,15 @@
 		resizeDataZoom();
 	});
 
+	function getEChartCount() {
+		let eChartCount = 1;
+		if (_addAccTradeVolumeYn) {
+			eChartCount += 1;
+		}
+
+		return eChartCount;
+	}
+
 	async function initDataWithAiResponses(eChartRequestData: AiAnalyticsCandleEChartRequestData) {
 		await getCandleDataList(eChartRequestData);
 		await initEChart();
@@ -130,6 +141,8 @@
 				candleDateTime,
 				eChartRequestData.dateTimeFormat
 			);
+
+			_decimalDepth = new Decimal(item.tradePrice).dp();
 
 			acc[dateTime] = item;
 			return acc;
@@ -253,15 +266,13 @@
 
 		_eCharts.showLoading();
 
-		const marketCandleDateTime: string[] = await getDateTimeList();
+		const dateTimeList: string[] = await getDateTimeList();
 
-		const seriesData = await getSeriesOptionList(marketCandleDateTime);
+		const seriesData = await getSeriesOptionList(dateTimeList);
 
-		const dataListInList = _addAccTradeVolumeYn ? [marketCandleDateTime, marketCandleDateTime] : [marketCandleDateTime];
-
-		const gridOption = EChartsOptionUtils.getGridOption(dataListInList.length);
-		const xAxis = EChartsOptionUtils.getXAxisOption(dataListInList);
-		const yAxis = EChartsOptionUtils.getYAxisOption(dataListInList);
+		const gridOption = EChartsOptionUtils.getGridOption(_eChartCount);
+		const xAxis = EChartsOptionUtils.getXAxisOption(dateTimeList, _eChartCount);
+		const yAxis = EChartsOptionUtils.getYAxisOption(_eChartCount);
 
 		const legend = EChartsOptionUtils.getLegentOption(seriesData.itemNameList);
 
@@ -367,7 +378,7 @@
 
 				if (!candleData) {
 					return [
-						NaN,
+						index,
 						NaN,
 						NaN
 					];
@@ -401,47 +412,26 @@
 				return candleData.tradePrice;
 			});
 
-			const ma5SeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				'MA5',
-				EChartsOptionUtils.calculateMA(5, tradePriceList),
+			const periodList = [5, 15, 30];
+
+			const maSeriesOptionList = await EChartsOptionUtils.getMASeriesOption(
+				'MA',
+				tradePriceList,
+				periodList,
 				0,
-				0,
-				'#FF0000'
+				_decimalDepth
 			);
 
-			const ma10SeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				'MA10',
-				EChartsOptionUtils.calculateMA(10, tradePriceList),
-				0,
-				0,
-				'#00FF00'
-			);
+			const itemNameList = maSeriesOptionList.map((item) => {
+				if (item.name) {
+					return item.name.toString();
+				}
 
-			const ma20SeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				'MA20',
-				EChartsOptionUtils.calculateMA(20, tradePriceList),
-				0,
-				0,
-				'#0000FF'
-			);
+				return '';
+			});
 
-			const ma30SeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				'MA30',
-				EChartsOptionUtils.calculateMA(30, tradePriceList),
-				0,
-				0,
-				'#FF00FF'
-			);
-
-			seriesData.itemNameList.push('MA5');
-			seriesData.itemNameList.push('MA10');
-			seriesData.itemNameList.push('MA20');
-			seriesData.itemNameList.push('MA30');
-
-			seriesData.seriesList.push(ma5SeriesOption);
-			seriesData.seriesList.push(ma10SeriesOption);
-			seriesData.seriesList.push(ma20SeriesOption);
-			seriesData.seriesList.push(ma30SeriesOption);
+			seriesData.itemNameList.push(...itemNameList);
+			seriesData.seriesList.push(...maSeriesOptionList);
 		}
 
 		if (!eChartRequestData.inferenceByDateTime) {
@@ -745,7 +735,7 @@
 				class="p-0 focus:ring-0"
 				onclick={onclickAddBeforeCandleList}>
 				<CircleChevronLeftIcon class="w-5 h-5"
-												 strokeWidth={3} />
+															 strokeWidth={3} />
 			</Button>
 			<div class="border pb-1 shadow-sm rounded-md">
 				<Range

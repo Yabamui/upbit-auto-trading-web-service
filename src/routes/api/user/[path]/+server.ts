@@ -4,7 +4,7 @@ import type { Cookies } from '@sveltejs/kit';
 import { UserService } from '$lib/server/service/UserService';
 import { ApiPathCode } from '$lib/common/enums/ApiPathCode';
 
-export async function GET({ params, url }) {
+export async function GET({ params }) {
 	const path = params.path;
 
 	if ('info' === path) {

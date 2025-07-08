@@ -1,55 +1,56 @@
-import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit';
 import { ResponseCode } from '$lib/common/enums/ResponseCode';
-import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
-import { NodeCronJob } from '$lib/server/job/NodeCronJob';
-import { redisClient } from '$lib/server/config/RedisConfig';
+import { LoggingUtils } from '$lib/common/utils/LoggingUtils';
+import { BatchJob } from '$lib/server/job/BatchJob';
+import type { Handle, HandleServerError, ServerInit } from '@sveltejs/kit';
 
 export const handle = (async ({ event, resolve }) => {
-	console.log(
-		`${CurrentDateUtils.getNowDateTimeString()} :: ### Server Route Id : ${event.route.id}`
-	);
+	LoggingUtils.info('Server Route Id', event.route.id || '');
 
-	const response = await resolve(event);
-
-	return response;
+	return resolve(event);
 }) satisfies Handle;
 
 export const handleError: HandleServerError = async ({ error, event, status, message }) => {
 	const errorId = crypto.randomUUID();
 
-	console.error('### handleError Server');
-	console.error(errorId);
-	console.error(error);
-	console.error(event.url.href);
-	console.error(event.request.headers);
-	console.error(status);
-	console.error(message);
-	console.error('### handleError Server');
+	const convertError = error as Error;
+
+	const errorJson = {
+		errorId,
+		status,
+		message,
+		eventUrl: event.url.href,
+		eventRequestHeaders: event.request.headers,
+		convertErrorMessage: convertError.message,
+	}
+
+	LoggingUtils.error('handleError Server', JSON.stringify(errorJson));
 
 	return {
 		errorId,
 		code: ResponseCode.notFound.code,
-		message: 'Something is Wrong!'
+		message: convertError.message
 	};
 };
 
 export const init: ServerInit = async () => {
-	console.log('### init Server');
+	LoggingUtils.info('### Server init', 'Start');
 
-	await NodeCronJob.startAll();
+	await BatchJob.startAll();
 
 	process.on('sveltekit:shutdown', async (reason) => {
-		console.log('### SvelteKit Shutdown because of ' + reason);
-		
-		await redisClient.disconnect();
-		await NodeCronJob.stopAll();
+		// const redisClient = await getRedisClient();
+		LoggingUtils.info('### SvelteKit Shutdown', reason);
+
+		await BatchJob.stopAll();
+		// await redisClient.disconnect();
 	});
 
 	process.on('SIGINT', async () => {
-		console.log('### Process SIGINT');
-		
-		await NodeCronJob.stopAll();
-		await redisClient.disconnect();
+		// const redisClient = await getRedisClient();
+		LoggingUtils.info('### Process SIGINT', 'SIGINT');
+
+		await BatchJob.stopAll();
+		// await redisClient.disconnect();
 		process.exit(130);
 	});
 };

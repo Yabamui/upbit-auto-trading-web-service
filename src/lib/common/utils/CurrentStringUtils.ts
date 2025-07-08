@@ -1,5 +1,6 @@
 export const CurrentStringUtils = {
 	generateQueryParam: async (queryObject: unknown): Promise<string> => {
+		
 		if (!(queryObject instanceof Object)) {
 			return '';
 		}
@@ -7,6 +8,10 @@ export const CurrentStringUtils = {
 		const paramList = [];
 
 		for (const [key, value] of Object.entries(queryObject)) {
+			if (value === 'undefined' || value === '' || value === null || value === undefined) {
+				continue;
+			}
+			
 			const valueType = typeof value;
 
 			switch (valueType) {

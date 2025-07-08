@@ -7,7 +7,7 @@
 	} from 'flowbite-svelte';
 	import type { ResponseObject } from '$lib/common/models/ResponseData';
 	import type { UserInfoData } from '$lib/common/models/UserInfoData';
-	import { UserWebApi } from '$lib/web/api/UserWebApi';
+	import { UserWebApi } from '$lib/web/request/UserWebApi';
 	import { ResponseCode } from '$lib/common/enums/ResponseCode';
 	import { userStore } from '$lib/stores/UserStore';
 
@@ -58,14 +58,11 @@
 
 
 <Modal bind:open={modalOpenYn}
+			 title="Sign up to your account"
 			 size="xs"
 			 autoclose={false}
 			 class="w-full">
-	<form class="flex flex-col space-y-6"
-				action="#">
-		<h3 class="mb-4 text-xl font-medium text-gray-900 dark:text-white">
-			Sign up
-		</h3>
+	<div class="flex flex-col space-y-6">
 		<Label class="space-y-2">
 			<span>Email</span>
 			<Input type="email"
@@ -113,10 +110,12 @@
 				Go Sign in
 			</a>
 		</div>
+	</div>
+	<svelte:fragment slot="footer">
 		<Button type="button"
-						class="w-full1"
+						class="w-full"
 						onclick={async () => registerUser()}>
 			Sign up to your account
 		</Button>
-	</form>
+</svelte:fragment>
 </Modal>

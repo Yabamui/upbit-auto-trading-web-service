@@ -37,7 +37,8 @@
 	} from '$lib/common/models/TickerData';
 	import {
 		currentMarketCodeStore,
-		tickerCalculationStore
+		tickerCalculationStore,
+		tickerListStore
 	} from '$lib/stores/MarketStore';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
@@ -47,8 +48,8 @@
 	import ToastAlertComponent from '$lib/web/components/application/ToastAlertComponent.svelte';
 	import { type AiLatestInferenceData } from '$lib/common/models/AiResponsesData';
 	import type { AiAnalyticsCandleEChartRequestData } from '$lib/common/models/AiAnalyticsData';
-	import AiAnalyticsCandleEChartsComponent
-		from '$lib/web/components/ai-analytics/AiAnalyticsCandleEChartsComponent.svelte';
+	import AiAnalyticsAiInferenceEChartsComponent
+		from '$lib/web/components/ai-analytics/AiAnalyticsAiInferenceEChartsComponent.svelte';
 	import { UPBitCandleTimeZones } from '$lib/common/enums/UPBitCandleEnum';
 
 	const sortType = {
@@ -103,6 +104,7 @@
 	let _sortTargetIndex: number = $state(-1);
 	let _sortType: string = $state(sortType.diffRate);
 	let _sortAscDesc: boolean = $state(false);
+	let _inferenceYn: boolean = $state(true);
 
 	let _searchMarket: string = $state('');
 	let _alertMessage: string = $state('');
@@ -111,6 +113,7 @@
 	let _eChartClearYn: boolean = $state(false);
 
 	let _dateTimeList: string[] = $state([]);
+	let _tickerByMarketRecord: Record<string, TickerData> = $state({});
 	let _tickerAndInferencePriceList: TickerAndInferencePriceData[] = $state([]);
 	let _inferenceByDateTimeByMarket: Record<string, Record<string, AiLatestInferenceData>> = $state({});
 
@@ -139,9 +142,9 @@
 
 	$effect(() => {
 		const tickerUpdateInterval = setInterval(async () => {
-			const tickerByMarketRecord = await getTickerDataList();
+			await getTickerDataList();
 			await updateTickerAndAiResponsesData(
-				tickerByMarketRecord,
+				_tickerByMarketRecord,
 				_inferenceByDateTimeByMarket
 			);
 		}, _tickerUpdateInterval);
@@ -158,9 +161,9 @@
 			_marketCurrencyType = marketCurrencyType.code;
 		}
 
-		const result = await Promise.all([getTickerDataList(), getAiLatestInferenceList()]);
+		await Promise.all([getTickerDataList(), getAiLatestInferenceList()]);
 
-		await updateTickerAndAiResponsesData(result[0], _inferenceByDateTimeByMarket);
+		await updateTickerAndAiResponsesData(_tickerByMarketRecord, _inferenceByDateTimeByMarket);
 
 		if (_tickerAndInferencePriceList.length > 0) {
 			const tickerAndAiResponses = _tickerAndInferencePriceList
@@ -176,7 +179,9 @@
 		setECartReqeustData(marketInfo, inferenceByDateTime);
 	}
 
-	async function getTickerDataList(): Promise<Record<string, TickerData>> {
+	async function getTickerDataList() {
+		_tickerByMarketRecord = {};
+
 		const responseObject: ResponseObject<TickerData[]> =
 			await TickerWebApi.getTickerAll(_marketCurrencyType);
 
@@ -184,9 +189,11 @@
 			return {} as Record<string, TickerData>;
 		}
 
-		const tickerData: TickerData[] = responseObject.data as TickerData[];
+		const tickerList: TickerData[] = responseObject.data as TickerData[];
 
-		return tickerData.reduce((acc, item) => {
+		tickerListStore.set(tickerList);
+
+		_tickerByMarketRecord = tickerList.reduce((acc, item) => {
 			acc[item.market] = item;
 			return acc;
 		}, {} as Record<string, TickerData>);
@@ -195,11 +202,13 @@
 	async function getAiLatestInferenceList() {
 
 		const judgementYn = false;
+		_inferenceYn = false;
 		_inferenceByDateTimeByMarket = {};
 
 		const responseObject: ResponseObject<unknown> =
 			await AiAnalyticsWebApi.getAiLatestInferenceList(
 				_marketCurrencyType,
+				'',
 				candleUnit,
 				candleTimeZone,
 				judgementYn
@@ -211,8 +220,14 @@
 		}
 
 		const aiLatestInferenceList = responseObject.data as AiLatestInferenceData[];
+
+		if (aiLatestInferenceList.length === 0) {
+			return {};
+		}
+
 		const dateTimeFormat = CurrentDateUtils.getFormat(candleUnit);
 
+		_inferenceYn = true;
 		_inferenceByDateTimeByMarket = aiLatestInferenceList.reduce((acc, item) => {
 			if (!acc[item.market]) {
 				acc[item.market] = {};
@@ -463,10 +478,10 @@
 	async function onclickMarketCurrency(currencyType: string) {
 		_marketCurrencyType = currencyType;
 
-		const result = await Promise.all([getTickerDataList(), getAiLatestInferenceList()]);
+		await Promise.all([getTickerDataList(), getAiLatestInferenceList()]);
 
 		await updateTickerAndAiResponsesData(
-			result[0],
+			_tickerByMarketRecord,
 			_inferenceByDateTimeByMarket
 		);
 	}
@@ -503,15 +518,23 @@
 		tickerAndInferencePrice: TickerAndInferencePriceData
 	) {
 
+		const ticker: TickerData = _tickerByMarketRecord[marketInfoData.market];
+
 		const tickerCalculationData: TickerCalculationData = {
 			market: marketInfoData.market,
 			koreanName: marketInfoData.koreanName,
 			englishName: marketInfoData.englishName,
+			decimalDepth: tickerAndInferencePrice.decimalDepth,
+			openingPrice: ticker.openingPrice,
+			highPrice: ticker.highPrice,
+			lowPrice: ticker.lowPrice,
 			tradePrice: tickerAndInferencePrice.tradePrice,
 			diffRate: tickerAndInferencePrice.diffRate,
 			diffPrice: tickerAndInferencePrice.diffPrice,
+			accTradePrice: ticker.accTradePrice,
 			accTradePrice24h: tickerAndInferencePrice.accTradePrice24h,
-			decimalDepth: tickerAndInferencePrice.decimalDepth
+			accTradeVolume: ticker.accTradeVolume,
+			accTradeVolume24h: ticker.accTradeVolume24h,
 		};
 
 		tickerCalculationStore.set(tickerCalculationData);
@@ -621,16 +644,16 @@
 </script>
 
 <div class="flex flex-row w-full gap-4">
-	<Card class="flex flex-grow min-w-[800px] h-[650px] overflow-hidden"
+	<Card class="flex flex-grow min-w-[1000px] h-[700px] overflow-hidden"
 				size="none">
 		{#if _eChartRequestData}
-			<AiAnalyticsCandleEChartsComponent
+			<AiAnalyticsAiInferenceEChartsComponent
 				eChartRequestData={_eChartRequestData}
 				chartClearYn={_eChartClearYn} />
 		{/if}
 	</Card>
 
-	<Card class="flex-none w-[600px] h-[650px] overflow-hidden"
+	<Card class="flex-none w-[500px] h-[700px] overflow-hidden"
 				padding="none"
 				size="none">
 		<Tabs class=""
@@ -645,7 +668,8 @@
 				<TabItem title={currencyType.name}
 								 onclick={() => onclickMarketCurrency(currencyType.code)}
 								 open={_marketCurrencyType === currencyType.code}>
-					<Table divClass="relative table-fixed w-full h-[500px] overflow-auto">
+					{#if _inferenceYn}
+						<Table divClass="relative table-fixed w-full h-[550px] overflow-auto">
 						<TableHead defaultRow={false}
 											 class="h-[40px]">
 							<tr>
@@ -878,6 +902,129 @@
 							</TableBody>
 						{/if}
 					</Table>
+					{:else}
+						<Table divClass="relative table-fixed w-full h-[500px] overflow-auto">
+							<TableHead defaultRow={false}
+												 class="h-[40px]">
+								<tr>
+									<TableHeadCell class="min-w-[100px] text-start text-[12px] text-nowrap bg-white dark:bg-gray-800"
+																 padding="none"
+																 onclick={() => _koreanNameYn  = !_koreanNameYn}>
+										<p class="inline-flex text-[11px] font-medium text-gray-500 dark:text-gray-400">
+											{_koreanNameYn ? '한글명' : '영문명'}
+											<SortHorizontalOutline class="ms-1 w-4 h-4" />
+										</p>
+									</TableHeadCell>
+									<TableHeadCell class="min-w-[80px] items-center text-center text-nowrap bg-white dark:bg-gray-800"
+																 padding="none"
+																 onclick={onclickTradePriceSort}>
+										<p class="inline-flex text-[11px] font-medium text-gray-500 dark:text-gray-400">
+											현재가
+											{#if _sortType === sortType.tradePrice}
+												{#if _sortAscDesc}
+													<CaretUpSolid class="ms-1 w-4 h-4 text-blue-500" />
+												{:else}
+													<CaretDownSolid class="ms-1 w-4 h-4 text-red-500" />
+												{/if}
+											{:else}
+												<CaretSortSolid class="ms-1 w-4 h-4" />
+											{/if}
+										</p>
+									</TableHeadCell>
+									<TableHeadCell class="min-w-[80px] items-center text-center text-nowrap bg-white dark:bg-gray-800"
+																 padding="none"
+																 onclick={onclickDiffRateSort}>
+										<p class="inline-flex text-[11px] font-medium text-gray-500 dark:text-gray-400">
+											전일대비
+											{#if _sortType === sortType.diffRate}
+												{#if _sortAscDesc}
+													<CaretUpSolid class="ms-1 w-4 h-4 text-blue-500" />
+												{:else}
+													<CaretDownSolid class="ms-1 w-4 h-4 text-red-500" />
+												{/if}
+											{:else}
+												<CaretSortSolid class="ms-1 w-4 h-4" />
+											{/if}
+										</p>
+									</TableHeadCell>
+									<TableHeadCell class="min-w-[80px] items-center text-center text-nowrap bg-white dark:bg-gray-800"
+																 padding="none"
+																 onclick={onclickAccTradePrice24hSort}>
+										<p class="inline-flex text-[11px] font-medium text-gray-500 dark:text-gray-400">
+											거래대금
+											{#if _sortType === sortType.accTradePrice24h}
+												{#if _sortAscDesc}
+													<CaretUpSolid class="ms-1 w-4 h-4 text-blue-500" />
+												{:else}
+													<CaretDownSolid class="ms-1 w-4 h-4 text-red-500" />
+												{/if}
+											{:else}
+												<CaretSortSolid class="ms-1 w-4 h-4" />
+											{/if}
+										</p>
+									</TableHeadCell>
+								</tr>
+							</TableHead>
+							{#if _tickerAndInferencePriceList.length > 0}
+								<TableBody>
+									{#each getTickerAndAiResponsesDataListBySearchMarket() as item}
+										{@const currentMarketBorder = marketInfo.market === item.market ?
+											'border-separate border-y border-primary-500 bg-primary-100 dark:bg-primary-800' :
+											''}
+										{@const diffColor = item.diffPrice > 0 ?
+											'text-red-500' :
+											item.diffPrice < 0 ? 'text-blue-500' : 'text-gray-500'}
+										<TableBodyRow
+											class="h-[42px] {currentMarketBorder}"
+											onclick={() => onclickMarketItem(item)}>
+											<TableBodyCell class="text-start text-[12px] p-0 bg-white dark:bg-gray-800 {currentMarketBorder}">
+												<p class="text-wrap text-[12px] font-medium leading-none">
+													{_koreanNameYn ? item.koreanName : item.englishName}
+												</p>
+												<p class="text-[11px] text-gray-500 dark:text-gray-400">
+													{item.market}
+												</p>
+											</TableBodyCell>
+											<TableBodyCell class="p-0 text-wrap text-end bg-white dark:bg-gray-800 {diffColor} {currentMarketBorder}">
+												<p class="text-[12px] font-medium">
+													{CurrentNumberUtils.numberWithCommas(item.tradePrice, item.decimalDepth)}
+												</p>
+											</TableBodyCell>
+											<TableBodyCell class="p-0 text-wrap text-end bg-white dark:bg-gray-800 {diffColor} {currentMarketBorder}">
+												<p class="items-center text-[12px] text-end font-semibold">
+													{CurrentNumberUtils.ceilPrice(item.diffRate, 2)}%
+												</p>
+												<p class="text-[11px] text-end">
+
+													{CurrentNumberUtils.numberWithCommas(CurrentNumberUtils.ceilPrice(
+														item.diffPrice,
+														item.decimalDepth
+													), item.decimalDepth)}
+												</p>
+											</TableBodyCell>
+											<TableBodyCell class="p-0 text-wrap text-end bg-white dark:bg-gray-800 {diffColor} {currentMarketBorder}">
+												{#if item.accTradePrice24h > 1000000}
+													<p class="items-center text-[12px] text-end font-semibold text-gray-900 dark:text-white">
+														{CurrentNumberUtils.numberWithCommas(CurrentNumberUtils.divideCeil(
+															item.accTradePrice24h,
+															1000000
+														), 0)}
+													</p>
+													<p class="text-[11px] text-gray-500 dark:text-gray-400">
+														백만
+													</p>
+												{:else }
+													<p class="items-center text-[12px] text-end font-semibold">
+														{CurrentNumberUtils.numberWithCommas(item.accTradePrice24h, 0)}
+													</p>
+												{/if}
+											</TableBodyCell>
+										</TableBodyRow>
+									{/each}
+								</TableBody>
+							{/if}
+						</Table>
+					{/if}
 				</TabItem>
 			{/each}
 		</Tabs>

@@ -4,7 +4,7 @@ export interface AiAnalyticsRequestData {
 	market: string;
 	aiModelId: number;
 	aiPromptsId: number;
-	candleType: string;
+	candleUnit: string;
 	candleCount: number;
 	candleTimeZone: string;
 	requestYn: boolean;
@@ -21,8 +21,19 @@ export interface AiAnalyticsRequestCreateRequestData {
 	market: string;
 	aiModelId: number;
 	aiPromptsId: number;
-	candleType: string;
+	candleUnit: string;
 	candleCount: number;
 	candleTimeZone: string;
 	requestYn: boolean;
+}
+
+export interface AiAnalyticsRequestFormData {
+	ai: string;
+	aiModelId: string;
+	aiModelName: string;
+	aiPromptsId: string;
+	aiPromptsTitle: string;
+	candleUnit: string;
+	candleCount: number;
+	candleTimeZone: string;
 }

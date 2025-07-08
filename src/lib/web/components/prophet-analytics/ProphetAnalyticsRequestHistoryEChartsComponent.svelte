@@ -8,7 +8,8 @@
 	import {
 		Button,
 		ButtonGroup,
-		Card,
+		Dropdown,
+		DropdownItem,
 		Range
 	} from 'flowbite-svelte';
 	import type { ResponseObject } from '$lib/common/models/ResponseData';
@@ -23,30 +24,77 @@
 	} from '$lib/common/utils/EChartsOptionUtils';
 	import Decimal from 'decimal.js';
 	import { CurrentNumberUtils } from '$lib/common/utils/CurrentNumberUtils';
+	import { ProphetAnalyticsPriceTypeEnum } from '$lib/common/enums/ProphetAnalyticsPriceTypeEnum';
+	import { ChevronDownIcon } from 'lucide-svelte';
 
 	let {
-		prophetAnalyticsRequestId,
-		chartClearYn = $bindable()
+		prophetAnalyticsRequestId
 	}: {
 		prophetAnalyticsRequestId: number | undefined,
-		chartClearYn: boolean
 	} = $props();
 
-	let _showMarkLine = $state(false);
+	let _eChartCount = $derived.by(getEChartCount);
 	let _dataZoomStart = $state(50);
 	let _textColor = $derived($colorThemeStore === 'light' ? '#000' : '#ccc');
 	let _eChartsElement: HTMLDivElement | undefined = $state(undefined);
 	let _eCharts: echarts.ECharts | undefined = $state(undefined);
+	let _priceType: string = $state(ProphetAnalyticsPriceTypeEnum.CLOSE_PRICE.key);
+	let _priceTypeDropdownOpenYn = $state(false);
+	let _resultAndItemByPriceTypeRecord: Record<string, ProphetAnalyticsResultAndItemData> = $state({});
 	let _resultAndItemData: ProphetAnalyticsResultAndItemData | null = $state(null);
-	let _addTrendYn = $state(false);
-	let _addForecastYn = $state(false);
-	let _addForecastAreaYn = $state(false);
-	let _addYearlyYn = $state(false);
-	let _addMonthlyYn = $state(false);
-	let _addWeeklyYn = $state(false);
-	let _addDailyYn = $state(false);
-	let _addAdditiveYn = $state(false);
-	let _addMultiplicativeYn = $state(false);
+
+	let _eChartIndicatorsDropdownOpenYn = $state(false);
+	let _eChartIndicator = $state({
+		Forecast: {
+			chartName: 'Forecast',
+			openYn: false
+		},
+		ForecastArea: {
+			chartName: 'Forecast Area',
+			openYn: false
+		},
+		Trend: {
+			chartName: 'Trend',
+			openYn: false
+		},
+		Yearly: {
+			chartName: 'Yearly',
+			openYn: false
+		},
+		Monthly: {
+			chartName: 'Monthly',
+			openYn: false
+		},
+		Weekly: {
+			chartName: 'Weekly',
+			openYn: false
+		},
+		Daily: {
+			chartName: 'Daily',
+			openYn: false
+		},
+		Additive: {
+			chartName: 'Additive',
+			openYn: false
+		},
+		Multiplicative: {
+			chartName: 'Multiplicative',
+			openYn: false
+		},
+		Changepoint: {
+			chartName: 'Changepoint',
+			openYn: false
+		},
+	});
+	// let _addTrendYn = $state(false);
+	// let _addForecastYn = $state(false);
+	// let _addForecastAreaYn = $state(false);
+	// let _addYearlyYn = $state(false);
+	// let _addMonthlyYn = $state(false);
+	// let _addWeeklyYn = $state(false);
+	// let _addDailyYn = $state(false);
+	// let _addAdditiveYn = $state(false);
+	// let _addMultiplicativeYn = $state(false);
 
 	onDestroy(() => {
 		_resultAndItemData = null;
@@ -79,9 +127,16 @@
 		resizeDataZoom();
 	});
 
+	function getEChartCount() {
+		let eChartCount = 1;
+
+		return eChartCount;
+	}
+
 	async function getProphetAnalyticsResultAndItem(prophetAnalyticsRequestId: number | undefined) {
 
 		_resultAndItemData = null;
+		_resultAndItemByPriceTypeRecord = {};
 
 		if (!prophetAnalyticsRequestId) {
 			return;
@@ -95,14 +150,18 @@
 			return;
 		}
 
-		_resultAndItemData = responseObject.data as ProphetAnalyticsResultAndItemData;
+		const resultAndItemList = responseObject.data as ProphetAnalyticsResultAndItemData[];
+
+		_resultAndItemByPriceTypeRecord = resultAndItemList.reduce((acc, item) => {
+			acc[item.result.priceType] = item;
+
+			return acc;
+		}, {} as Record<string, ProphetAnalyticsResultAndItemData>);
+
+		_resultAndItemData = _resultAndItemByPriceTypeRecord[_priceType] || null;
 	}
 
 	async function mount() {
-
-		if (!_resultAndItemData) {
-			return;
-		}
 
 		await tick();
 
@@ -123,16 +182,15 @@
 			});
 		}
 
-		if (chartClearYn) {
-			_eCharts.clear();
-			chartClearYn = false;
+		if (!_resultAndItemData) {
+			return;
 		}
 
 		_eCharts.showLoading();
 
 		let dateTimeFormat = 'YYYY-MM-DD HH';
 
-		if (UPBitCandleUnitEnum.days.key === _resultAndItemData.result.candleType) {
+		if (UPBitCandleUnitEnum.days.key === _resultAndItemData.result.candleUnit) {
 			dateTimeFormat = 'YYYY-MM-DD';
 		}
 
@@ -142,12 +200,11 @@
 			return;
 		}
 
-		const marketCandleDateTime: string[] = await getDateTimeList(dateTimeFormat);
+		const dateTimeList: string[] = await getDateTimeList(dateTimeFormat);
 
-		const dataListInList = [marketCandleDateTime];
-		const gridOption = EChartsOptionUtils.getGridOption(dataListInList.length);
-		const xAxis = EChartsOptionUtils.getXAxisOption(dataListInList);
-		const yAxis = EChartsOptionUtils.getYAxisOption(dataListInList);
+		const gridOption = EChartsOptionUtils.getGridOption(_eChartCount);
+		const xAxis = EChartsOptionUtils.getXAxisOption(dateTimeList, _eChartCount);
+		const yAxis = EChartsOptionUtils.getYAxisOption(_eChartCount);
 
 		const legend = EChartsOptionUtils.getLegentOption(seriesData.itemNameList);
 
@@ -163,13 +220,13 @@
 
 		reflectColorTheme(_textColor);
 
-		addMarkLine();
+		addChangepointMarkLine();
 
 		_eCharts.hideLoading();
 	}
 
 	function addProphetAnalyticsResultAndItemAndMount() {
-		_addForecastYn = true;
+		_eChartIndicator.Forecast.openYn = true;
 
 		getProphetAnalyticsResultAndItem(prophetAnalyticsRequestId)
 			.then(() => mount());
@@ -177,9 +234,48 @@
 
 	function removeProphetAnalyticsResultAndItemAndMount() {
 		_resultAndItemData = null;
-		_addForecastYn = false;
-		_addTrendYn = false;
-		_addForecastAreaYn = false;
+		_eChartIndicator = {
+			Forecast: {
+				chartName: 'Forecast',
+				openYn: false
+			},
+			ForecastArea: {
+				chartName: 'Forecast Area',
+				openYn: false
+			},
+			Trend: {
+				chartName: 'Trend',
+				openYn: false
+			},
+			Yearly: {
+				chartName: 'Yearly',
+				openYn: false
+			},
+			Monthly: {
+				chartName: 'Monthly',
+				openYn: false
+			},
+			Weekly: {
+				chartName: 'Weekly',
+				openYn: false
+			},
+			Daily: {
+				chartName: 'Daily',
+				openYn: false
+			},
+			Additive: {
+				chartName: 'Additive',
+				openYn: false
+			},
+			Multiplicative: {
+				chartName: 'Multiplicative',
+				openYn: false
+			},
+			Changepoint: {
+				chartName: 'Changepoint',
+				openYn: false
+			},
+		};
 	}
 
 	async function getDateTimeList(dateTimeFormat: string): Promise<string[]> {
@@ -230,10 +326,10 @@
 			return seriesData;
 		}
 
-		if (_addTrendYn) {
-			const itemName = 'Trend';
+		if (_eChartIndicator.Trend.openYn) {
+
 			const trendSeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				itemName,
+				_eChartIndicator.Trend.chartName,
 				_resultAndItemData.resultItemList.map((item) => {
 					return CurrentNumberUtils.ceilPrice(item.trend, decimalDepth);
 				}),
@@ -242,15 +338,14 @@
 				'lightgreen'
 			);
 
-			seriesData.itemNameList.push(itemName);
+			seriesData.itemNameList.push(_eChartIndicator.Trend.chartName);
 			seriesData.seriesList.push(trendSeriesOption);
 		}
 
-		if (_addForecastYn) {
-			const itemName = 'Forecast';
+		if (_eChartIndicator.Forecast.openYn) {
 
 			const forecastSeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				itemName,
+				_eChartIndicator.Forecast.chartName,
 				_resultAndItemData.resultItemList.map((item) => {
 					return CurrentNumberUtils.ceilPrice(item.yhat, decimalDepth);
 				}),
@@ -259,11 +354,12 @@
 				'black'
 			);
 
-			seriesData.itemNameList.push(itemName);
+			seriesData.itemNameList.push(_eChartIndicator.Forecast.chartName);
 			seriesData.seriesList.push(forecastSeriesOption);
 		}
 
-		if (_addForecastAreaYn) {
+		if (_eChartIndicator.ForecastArea.openYn) {
+
 			const lineConfidenceBandSeriesData: ECHartLineConfidenceBandSeriesData = {
 				highName: 'Forecast Upper',
 				lowName: 'Forecast Lower',
@@ -287,93 +383,92 @@
 			seriesData.seriesList.push(...forecastSeriesOptionList);
 		}
 
-		if (_addYearlyYn) {
-			const itemName = 'Yearly';
+		if (_eChartIndicator.Yearly.openYn) {
+
 			const yearlySeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				itemName,
+				_eChartIndicator.Yearly.chartName,
 				_resultAndItemData.resultItemList.map((item) => {
 					return CurrentNumberUtils.ceilPrice(item.yearly || 0, decimalDepth);
 				}),
 				0,
-				0,
+				0
 			);
 
-			seriesData.itemNameList.push(itemName);
+			seriesData.itemNameList.push(_eChartIndicator.Yearly.chartName);
 			seriesData.seriesList.push(yearlySeriesOption);
 		}
 
-		if (_addMonthlyYn) {
-			const itemName = 'Monthly';
+		if (_eChartIndicator.Monthly.openYn) {
 			const monthlySeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				itemName,
+				_eChartIndicator.Monthly.chartName,
 				_resultAndItemData.resultItemList.map((item) => {
 					return CurrentNumberUtils.ceilPrice(item.monthly || 0, decimalDepth);
 				}),
 				0,
-				0,
+				0
 			);
 
-			seriesData.itemNameList.push(itemName);
+			seriesData.itemNameList.push(_eChartIndicator.Monthly.chartName);
 			seriesData.seriesList.push(monthlySeriesOption);
 		}
 
-		if (_addWeeklyYn) {
-			const itemName = 'Weekly';
+		if (_eChartIndicator.Weekly.openYn) {
+
 			const weeklySeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				itemName,
+				_eChartIndicator.Weekly.chartName,
 				_resultAndItemData.resultItemList.map((item) => {
 					return CurrentNumberUtils.ceilPrice(item.weekly || 0, decimalDepth);
 				}),
 				0,
-				0,
+				0
 			);
 
-			seriesData.itemNameList.push(itemName);
+			seriesData.itemNameList.push(_eChartIndicator.Weekly.chartName);
 			seriesData.seriesList.push(weeklySeriesOption);
 		}
 
-		if (_addDailyYn) {
-			const itemName = 'Daily';
+		if (_eChartIndicator.Daily.openYn) {
+
 			const dailySeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				itemName,
+				_eChartIndicator.Daily.chartName,
 				_resultAndItemData.resultItemList.map((item) => {
 					return CurrentNumberUtils.ceilPrice(item.daily || 0, decimalDepth);
 				}),
 				0,
-				0,
+				0
 			);
 
-			seriesData.itemNameList.push(itemName);
+			seriesData.itemNameList.push(_eChartIndicator.Daily.chartName);
 			seriesData.seriesList.push(dailySeriesOption);
 		}
 
-		if (_addAdditiveYn) {
-			const itemName = 'Additive';
+		if (_eChartIndicator.Additive.openYn) {
+
 			const additiveSeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				itemName,
+				_eChartIndicator.Additive.chartName,
 				_resultAndItemData.resultItemList.map((item) => {
 					return CurrentNumberUtils.ceilPrice(item.additiveTerms || 0, decimalDepth);
 				}),
 				0,
-				0,
+				0
 			);
 
-			seriesData.itemNameList.push(itemName);
+			seriesData.itemNameList.push(_eChartIndicator.Additive.chartName);
 			seriesData.seriesList.push(additiveSeriesOption);
 		}
 
-		if (_addMultiplicativeYn) {
-			const itemName = 'Multiplicative';
+		if (_eChartIndicator.Multiplicative.openYn) {
+
 			const multiplicativeSeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				itemName,
+				_eChartIndicator.Multiplicative.chartName,
 				_resultAndItemData.resultItemList.map((item) => {
 					return CurrentNumberUtils.ceilPrice(item.multiplicativeTerms || 0, decimalDepth);
 				}),
 				0,
-				0,
+				0
 			);
 
-			seriesData.itemNameList.push(itemName);
+			seriesData.itemNameList.push(_eChartIndicator.Multiplicative.chartName);
 			seriesData.seriesList.push(multiplicativeSeriesOption);
 		}
 
@@ -436,15 +531,16 @@
 		};
 	}
 
-	function addMarkLine() {
+	function addChangepointMarkLine() {
 		if (!_eCharts || !_eCharts.getOption() || !_resultAndItemData ||
 			!_resultAndItemData.result.changepointDateTimeList) {
+			console.log('addChangepointMarkLine: no data');
 			return;
 		}
 
 		let dateTimeFormat = 'YYYY-MM-DD HH';
 
-		if (UPBitCandleUnitEnum.days.key === _resultAndItemData.result.candleType) {
+		if (UPBitCandleUnitEnum.days.key === _resultAndItemData.result.candleUnit) {
 			dateTimeFormat = 'YYYY-MM-DD';
 		}
 
@@ -456,7 +552,7 @@
 
 		_eCharts.setOption({
 			series: [
-				{ markLine: _showMarkLine ? markLineOption : undefined }
+				{ markLine: _eChartIndicator.Changepoint.openYn ? markLineOption : undefined }
 			]
 		});
 	}
@@ -523,154 +619,153 @@
 		});
 	}
 
-	function onclickAddTrend() {
-		_addTrendYn = !_addTrendYn;
+	function onclickPriceType(priceType: string) {
+		_priceType = priceType;
+		_resultAndItemData = _resultAndItemByPriceTypeRecord[priceType] || null;
+		_priceTypeDropdownOpenYn = false;
+
 		mount();
 	}
 
-	function onclickAddForecast() {
-		_addForecastYn = !_addForecastYn;
+	function onclickIndicator(chartName: string) {
+		switch (chartName) {
+			case 'Forecast':
+				onclickForecastYn();
+				break;
+			case 'Forecast Area':
+				onclickForecastAreaYn();
+				break;
+			case 'Trend':
+				onclickTrendYn();
+				break;
+			case 'Yearly':
+				onclickYearlyYn();
+				break;
+			case 'Monthly':
+				onclickMonthlyYn();
+				break;
+			case 'Weekly':
+				onclickWeeklyYn();
+				break;
+			case 'Daily':
+				onclickDailyYn();
+				break;
+			case 'Additive':
+				onclickAdditiveYn();
+				break;
+			case 'Multiplicative':
+				onclickMultiplicativeYn();
+				break;
+			case 'Changepoint':
+				onclickChangepointYn();
+				break
+			default:
+				break;
+		}
+	}
+
+	function onclickTrendYn() {
+		_eChartIndicator.Trend.openYn = !_eChartIndicator.Trend.openYn;
 		mount();
 	}
 
-	function onclickAddForecastArea() {
-		_addForecastAreaYn = !_addForecastAreaYn;
+	function onclickForecastYn() {
+		_eChartIndicator.Forecast.openYn = !_eChartIndicator.Forecast.openYn;
 		mount();
 	}
 
-	function onclickAddYearly() {
-		_addYearlyYn = !_addYearlyYn;
+	function onclickForecastAreaYn() {
+		_eChartIndicator.ForecastArea.openYn = !_eChartIndicator.ForecastArea.openYn;
 		mount();
 	}
 
-	function onclickAddMonthly() {
-		_addMonthlyYn = !_addMonthlyYn;
+	function onclickYearlyYn() {
+		_eChartIndicator.Yearly.openYn = !_eChartIndicator.Yearly.openYn;
 		mount();
 	}
 
-	function onclickAddWeekly() {
-		_addWeeklyYn = !_addWeeklyYn;
+	function onclickMonthlyYn() {
+		_eChartIndicator.Monthly.openYn = !_eChartIndicator.Monthly.openYn;
 		mount();
 	}
 
-	function onclickAddDaily() {
-		_addDailyYn = !_addDailyYn;
+	function onclickWeeklyYn() {
+		_eChartIndicator.Weekly.openYn = !_eChartIndicator.Weekly.openYn;
 		mount();
 	}
 
-	function onclickAddAdditive() {
-		_addAdditiveYn = !_addAdditiveYn;
+	function onclickDailyYn() {
+		_eChartIndicator.Daily.openYn = !_eChartIndicator.Daily.openYn;
 		mount();
 	}
 
-	function onclickAddMultiplicative() {
-		_addMultiplicativeYn = !_addMultiplicativeYn;
+	function onclickAdditiveYn() {
+		_eChartIndicator.Additive.openYn = !_eChartIndicator.Additive.openYn;
 		mount();
 	}
 
-	function onClickShowMarkLine() {
-		_showMarkLine = !_showMarkLine;
+	function onclickMultiplicativeYn() {
+		_eChartIndicator.Multiplicative.openYn = !_eChartIndicator.Multiplicative.openYn;
+		mount();
+	}
 
-		addMarkLine();
+	function onclickChangepointYn() {
+		_eChartIndicator.Changepoint.openYn = !_eChartIndicator.Changepoint.openYn;
+
+		addChangepointMarkLine();
 	}
 </script>
 
-
-<Card class="flex flex-col w-[800px] h-[300px]"
-			padding="none"
-			size="none">
+<div class="flex flex-col w-full h-full">
 	<div class="flex w-full items-center justify-between">
-		<ButtonGroup class="*:!ring-0">
+		<ButtonGroup class="*:!ring-0 gap-2">
 			<Button
-				disabled={!_resultAndItemData}
-				color={_addForecastYn ? 'green' : 'light'}
-				class="p-2 focus:ring-0"
-				onclick={() => onclickAddForecast()}>
-				<p class="text-[11px]">
-					Forecast
-				</p>
+				color="none"
+				class="p-0 focus:ring-0">
+				<div class="text-[12px] leading-none">
+					{_priceType}
+				</div>
+				<ChevronDownIcon class="w-3 h-3 ml-1"
+												 strokeWidth={3} />
 			</Button>
+			<Dropdown
+				placement="bottom-start"
+				bind:open={_priceTypeDropdownOpenYn}>
+				<DropdownItem
+					onclick={() => onclickPriceType(ProphetAnalyticsPriceTypeEnum.CLOSE_PRICE.key)}>
+					<div class="w-full text-[12px] items-center text-start leading-none">
+						{ProphetAnalyticsPriceTypeEnum.CLOSE_PRICE.key}
+					</div>
+				</DropdownItem>
+				<DropdownItem
+					onclick={() => onclickPriceType(ProphetAnalyticsPriceTypeEnum.CLOSE_PRICE_RATE.key)}>
+					<div class="w-full text-[12px] items-center text-start leading-none">
+						{ProphetAnalyticsPriceTypeEnum.CLOSE_PRICE_RATE.key}
+					</div>
+				</DropdownItem>
+			</Dropdown>
 			<Button
-				disabled={!_resultAndItemData}
-				color={_addForecastAreaYn ? 'green' : 'light'}
-				class="p-2 focus:ring-0"
-				onclick={() => onclickAddForecastArea()}>
-				<p class="text-[11px]">
-					Forecast Area
-				</p>
+				color="none"
+				class="p-0 focus:ring-0">
+				<div class="text-[12px] leading-none">
+					지표
+				</div>
+				<ChevronDownIcon class="w-3 h-3 ml-1"
+												 strokeWidth={3} />
 			</Button>
-			<Button
-				disabled={!_resultAndItemData}
-				color={_addTrendYn ? 'green' : 'light'}
-				class="p-2 focus:ring-0"
-				onclick={() => onclickAddTrend()}>
-				<p class="text-[12px]">
-					Trend
-				</p>
-			</Button>
-			<Button
-				disabled={!_resultAndItemData}
-				color={_showMarkLine ? 'green' : 'light'}
-				class="p-2 focus:ring-0"
-				onclick={onClickShowMarkLine}>
-				<p class="text-[11px]">
-					Point
-				</p>
-			</Button>
-			<Button
-				disabled={!_resultAndItemData}
-				color={_addYearlyYn ? 'green' : 'light'}
-				class="p-2 focus:ring-0"
-				onclick={() => onclickAddYearly()}>
-				<p class="text-[11px]">
-					Yearly
-				</p>
-			</Button>
-			<Button
-				disabled={!_resultAndItemData}
-				color={_addMonthlyYn ? 'green' : 'light'}
-				class="p-2 focus:ring-0"
-				onclick={() => onclickAddMonthly()}>
-				<p class="text-[11px]">
-					Monthly
-				</p>
-			</Button>
-			<Button
-				disabled={!_resultAndItemData}
-				color={_addWeeklyYn ? 'green' : 'light'}
-				class="p-2 focus:ring-0"
-				onclick={() => onclickAddWeekly()}>
-				<p class="text-[11px]">
-					Weekly
-				</p>
-			</Button>
-			<Button
-				disabled={!_resultAndItemData}
-				color={_addDailyYn ? 'green' : 'light'}
-				class="p-2 focus:ring-0"
-				onclick={() => onclickAddDaily()}>
-				<p class="text-[11px]">
-					Daily
-				</p>
-			</Button>
-			<Button
-				disabled={!_resultAndItemData}
-				color={_addAdditiveYn ? 'green' : 'light'}
-				class="p-2 focus:ring-0"
-				onclick={() => onclickAddAdditive()}>
-				<p class="text-[11px]">
-					Additive
-				</p>
-			</Button>
-			<Button
-				disabled={!_resultAndItemData}
-				color={_addMultiplicativeYn ? 'green' : 'light'}
-				class="p-2 focus:ring-0"
-				onclick={() => onclickAddMultiplicative()}>
-				<p class="text-[11px]">
-					Multiplicative
-				</p>
-			</Button>
+			<Dropdown
+				placement="bottom-start"
+				bind:open={_eChartIndicatorsDropdownOpenYn}>
+				{#each Object.values(_eChartIndicator) as item}
+					<DropdownItem
+						class={item.openYn ? 'border border-green-500' : ''}
+						onclick={() => onclickIndicator(item.chartName)}>
+						<div class="w-full text-[12px] items-center text-start leading-none">
+							{item.chartName}
+						</div>
+					</DropdownItem>
+				{/each}
+			</Dropdown>
 		</ButtonGroup>
 		<div class="border pb-2 shadow-sm rounded-md">
 			<Range
@@ -684,4 +779,4 @@
 	<div class="flex w-full h-full"
 			 bind:this={_eChartsElement}>
 	</div>
-</Card>
+</div>

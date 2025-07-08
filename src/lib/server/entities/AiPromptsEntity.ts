@@ -26,9 +26,9 @@ export const AiPromptsEntityUtils = {
 			userPromptsList: entity.user_prompts_array,
 			defaultYn: entity.default_yn,
 			aiResponseModelsId: entity.ai_response_models_id,
-			createdAt: CurrentDateUtils.toFormatStringByDate(entity.created_at),
-			updatedAt: CurrentDateUtils.toFormatStringByDate(entity.updated_at),
-			deletedAt: CurrentDateUtils.toFormatStringByDate(entity.deleted_at)
+			createdAt: CurrentDateUtils.toKSTFormatStringByDate(entity.created_at),
+			updatedAt: CurrentDateUtils.toKSTFormatStringByDate(entity.updated_at),
+			deletedAt: CurrentDateUtils.toKSTFormatStringByDate(entity.deleted_at)
 		};
 	}
 };

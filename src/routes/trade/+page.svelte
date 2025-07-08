@@ -1,228 +1,158 @@
 <script lang="ts">
-	export const prerender = true;
-
 	import type { PageData } from './$types';
-	import {
-		Card,
-		Listgroup,
-		ListgroupItem,
-		TabItem,
-		Tabs
-	} from 'flowbite-svelte';
-	import { currentMarketCodeStore } from '$lib/stores/MarketStore';
-	import {
-		MarketCurrencyCode,
-		MarketCurrencyTypeUtils
-	} from '$lib/common/enums/MarketCurrencyType';
 	import {
 		onDestroy,
 		onMount
 	} from 'svelte';
-	import type { MarketInfoData } from '$lib/common/models/MarketInfoData';
-	import { TickerWebApi } from '$lib/web/api/TickerWebApi';
-	import type { TickerData } from '$lib/common/models/TickerData';
-	import { page } from '$app/state';
-	import type { ResponseObject } from '$lib/common/models/ResponseData';
-	import { ResponseCode } from '$lib/common/enums/ResponseCode';
-	import TickerCandleChartComponent from '$lib/web/components/TickerCandleChartComponent.svelte';
+	import type { TickerCalculationData } from '$lib/common/models/TickerData';
+	import { CurrentNumberUtils } from '$lib/common/utils/CurrentNumberUtils';
+	import {
+		currentMarketCodeStore,
+		tickerCalculationStore
+	} from '$lib/stores/MarketStore';
+	import { Card } from 'flowbite-svelte';
+	import TradeInferenceEChartsComponent from '$lib/web/components/trade/TradeInferenceEChartsComponent.svelte';
+	import OrderBookComponent from '$lib/web/components/trade/OrderBookComponent.svelte';
+	import OrderComponent from '$lib/web/components/trade/OrderComponent.svelte';
+	import TradeMarketPriceComponent from '$lib/web/components/trade/TradeMarketPriceComponent.svelte';
+	import NewsFeedScrapResultComponent from '$lib/web/components/trade/NewsFeedScrapResultComponent.svelte';
 
 	let { data }: {
 		data: PageData
 	} = $props();
 
-	let initYn = false;
-	let currentMarketCurrencyType: string = $state(MarketCurrencyCode.KRW.code);
-	let marketInfoRecord: Record<string, MarketInfoData[]> = $state({});
-	let codeByTickerRecord: Record<string, TickerData> = $state({});
-	let currentMarketInfoData: MarketInfoData | undefined = $state(undefined);
-	let currentTickerData: TickerData | undefined = $state(undefined);
+	let _tickerCalculationData: TickerCalculationData | undefined = $state(undefined);
 
-	let milliseconds = $state(10000);
+	onDestroy(() => {});
 
-	onDestroy(() => {
-		console.log('onDestroy');
-	});
-
-	onMount(async () => {
-		console.log('onMount');
-
-		await setMarketInfoRecord();
-
-		await updateTickDataList();
-
-		initYn = true;
-
-		await updateCurrentData($currentMarketCodeStore);
+	onMount(() => {
+		if (data.marketInfo) {
+			currentMarketCodeStore.set(data.marketInfo.market);
+		}
 	});
 
 	$effect(() => {
-		currentMarketInfoData = data.marketInfo;
+		if ($tickerCalculationStore) {
+			_tickerCalculationData = JSON.parse($tickerCalculationStore);
+		}
 	});
-
-	// $effect(() => {
-	// 	const interval = setInterval(async () => {
-	// 		await updateTickDataList();
-	// 	}, milliseconds);
-	//
-	// 	return () => {
-	// 		clearInterval(interval);
-	// 	};
-	// });
-
-	$inspect(currentMarketCurrencyType)
-		.with(async () => {
-			await updateTickDataList();
-
-			await updateCurrentData($currentMarketCodeStore);
-		});
-
-	async function setMarketInfoRecord() {
-		marketInfoRecord = data.marketInfoList.reduce((acc, item) => {
-			const key = MarketCurrencyTypeUtils.getMarketCurrencyType(item.market);
-
-			if (!key) {
-				return acc;
-			}
-
-			if (!acc[key.code]) {
-				acc[key.code] = [];
-			}
-
-			acc[key.code].push(item);
-
-			return acc;
-		}, {} as Record<string, MarketInfoData[]>);
-	}
-
-	async function updateTickDataList() {
-
-		const responseObject: ResponseObject<TickerData[]> = await TickerWebApi.getTickerAll(currentMarketCurrencyType);
-
-		if (ResponseCode.success.code !== responseObject.code) {
-			// alert(responseObject.message);
-			codeByTickerRecord = {};
-			return;
-		}
-
-		const tickerDataList = responseObject.data as TickerData[];
-
-		codeByTickerRecord = tickerDataList.reduce((acc, item) => {
-			if (!acc[item.market]) {
-				acc[item.market] = item;
-			}
-
-			return acc;
-		}, {} as Record<string, TickerData>);
-	}
-
-	async function updateCurrentData(marketCode: string) {
-		if (initYn) {
-			currentTickerData = codeByTickerRecord[marketCode];
-		}
-	}
-
-	function updateCurrentMarketCode(marketCode: string) {
-		currentMarketCodeStore.set(marketCode);
-	}
-
-	function calculateRate(a: number, b: number) {
-		return (((a - b) / b) * 100).toFixed(2);
-	}
-
-	function calculateMillion(a: number) {
-		return formatNumber(Math.ceil(a / 1000000), 0);
-	}
-
-	function formatNumber(num: number, digits: number) {
-		return new Intl.NumberFormat('en-US', { minimumFractionDigits: digits }).format(num);
-	}
 </script>
 
-<main class="flex flex-auto w-full h-full p-4 gap-4 overflow-x-auto overflow-y-hidden">
-	<Card class="hidden md:flex w-full min-w-[900px] h-full bg-white dark:bg-black text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 divide-gray-200 dark:divide-gray-700"
-				padding="none"
-				size="none">
-
-		{#if currentMarketInfoData && Object.keys(codeByTickerRecord).length > 0}
-			{@const tickerData = codeByTickerRecord[currentMarketInfoData.market]}
-			<Card class="flex w-full"
-						size="none">
-				<div class="flex w-full">
-					{currentMarketInfoData.koreanName}
-					{currentMarketInfoData.market}
-				</div>
-				<div class="col-span-1 min-w-0 text-start">
-					<p class="text-[12px] font-medium text-gray-900 dark:text-white">
-						{tickerData.tradePrice}
-					</p>
-					<p class="text-[11px] text-gray-500 dark:text-gray-400">
-						{calculateRate(
-							tickerData.tradePrice,
-							tickerData.prevClosingPrice
-						)}%
-						{(tickerData.tradePrice - tickerData.prevClosingPrice).toFixed(0)}
-					</p>
-				</div>
-			</Card>
+<header class="relative grid grid-cols-2 gap-2 w-full h-20 px-4 py-2 items-center border-b-2 overflow-y-hidden overflow-x-auto">
+	<div class="col-span-2 grid grid-flow-col gap-4 w-full items-center justify-center">
+		{#if _tickerCalculationData}
+			{@const priceColor = _tickerCalculationData.diffPrice > 0 ?
+				'text-red-500' :
+				_tickerCalculationData.diffPrice < 0 ? 'text-blue-500' : ''}
+			<div class="min-w-0 text-end">
+				<p class="text-[24px] font-bold">
+					{_tickerCalculationData.koreanName}
+				</p>
+				<p class="text-[12px]">
+					{_tickerCalculationData.market}
+				</p>
+			</div>
+			<div class="min-w-0 text-start">
+				<p class="text-[22px] text-nowrap font-medium {priceColor}">
+					{CurrentNumberUtils.numberWithCommas(
+						_tickerCalculationData.tradePrice,
+						_tickerCalculationData.decimalDepth
+					)}
+					<span class="text-[12px]">
+						KRW
+					</span>
+				</p>
+				<p class="text-[11px] priceColor {priceColor}">
+					{_tickerCalculationData.diffRate.toFixed(2)}%
+					{CurrentNumberUtils.numberWithCommas(
+						_tickerCalculationData.diffPrice,
+						_tickerCalculationData.decimalDepth
+					)}
+				</p>
+			</div>
+			<div class="min-w-[70px] content-around">
+				<p class="text-[12px] text-nowrap font-medium">
+					고가 :
+					<span class="text-red-500">
+						{CurrentNumberUtils.numberWithCommas(
+							_tickerCalculationData.highPrice,
+							_tickerCalculationData.decimalDepth
+						)}
+					</span>
+				</p>
+				<p class="text-[12px] text-nowrap font-medium">
+					저가 :
+					<span class="text-blue-500">
+						{CurrentNumberUtils.numberWithCommas(
+							_tickerCalculationData.lowPrice,
+							_tickerCalculationData.decimalDepth
+						)}
+					</span>
+				</p>
+			</div>
+			<div class="w-[200px] content-around">
+				<p class="inline-flex w-full text-[12px] text-nowrap font-medium justify-between">
+					<span class="">
+						거래량(24H):
+					</span>
+					<span class="">
+						{CurrentNumberUtils.numberWithCommas(_tickerCalculationData.accTradeVolume24h, 0)}
+					</span>
+				</p>
+				<p class="inline-flex w-full text-[12px] text-nowrap font-medium justify-between">
+					<span>
+						거래금액(24H):
+					</span>
+					<span>
+						{CurrentNumberUtils.numberWithCommas(_tickerCalculationData.accTradePrice24h, 0)}
+					</span>
+				</p>
+			</div>
 		{/if}
+	</div>
+</header>
 
-		<Card class="flex w-full h-full"
-					size="none">
-			{#if currentMarketInfoData}
-				<TickerCandleChartComponent marketCode={currentMarketInfoData.market}/>
-			{/if}
-		</Card>
-	</Card>
+<main class="relative grid grid-flow-col w-full h-full p-4 gap-4 items-center justify-center overflow-y-auto">
+	<div class="grid grid-flow-col w-[1000px] h-full gap-4 overflow-hidden">
+		<div class="grid w-full gap-4 scrollbar-hide overflow-y-auto">
+			<Card class="flex w-full h-[700px] overflow-hidden"
+						padding="none"
+						size="none">
+				{#if data.marketInfo}
+					<TradeInferenceEChartsComponent
+						marketInfo={data.marketInfo} />
+				{/if}
+			</Card>
+			<div class="grid grid-flow-col w-full gap-4 justify-between">
+				<Card class="flex w-[480px] h-[500px] overflow-hidden"
+							padding="none"
+							size="none">
+					<OrderBookComponent
+						marketInfo={data.marketInfo}
+					/>
+				</Card>
 
-	<Card class="flex min-w-[500px] w-full max-h-[1024px] bg-white dark:bg-black text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 divide-gray-200 dark:divide-gray-700 overflow-hidden"
-				size="md">
-		<div class="flex flex-col w-full h-full overflow-y-auto">
-			<Tabs class=""
-						contentClass="p-2 bg-gray-50 rounded-lg dark:bg-gray-800 mt-4"
-						tabStyle="underline">
-				{#each MarketCurrencyTypeUtils.getMainCurrencyTypeList() as currencyType}
-					<TabItem title={currencyType.name}
-									 on:click={() => currentMarketCurrencyType = currencyType.code}
-									 open={currentMarketCurrencyType === currencyType.code}>
-						<Listgroup class="border-0 dark:!bg-transparent"
-											 active={true}>
-							{#each marketInfoRecord[currencyType.code] as item}
-								{@const tickerData = codeByTickerRecord[item.market]}
-								<ListgroupItem
-									itemDefaultClass="py-2 px-4 w-full text-sm font-medium list-none first:rounded-t-lg last:rounded-b-lg"
-									hoverClass="hover:bg-gray-100 dark:hover:bg-gray-700"
-									href={page.url.pathname + '?code=' + item.market}
-									on:click={() => updateCurrentMarketCode(item.market)}>
-									<div class="grid grid-cols-5 w-full items-center gap-2">
-										<div class="col-span-2 min-w-0">
-											<p class="text-[12px] font-medium text-gray-900 dark:text-white">
-												{item.koreanName}
-											</p>
-											<p class="text-[11px] text-gray-500 dark:text-gray-400">
-												{item.market}
-											</p>
-										</div>
-										<div class="col-span-1 items-center text-[12px] text-end font-semibold text-gray-900 dark:text-white">
-											{tickerData?.tradePrice}
-										</div>
-										<div class="col-span-1 min-w-0 text-end">
-											<p class="text-[12px] text-end font-medium text-gray-900 dark:text-white">
-												{calculateRate(tickerData?.tradePrice, tickerData?.prevClosingPrice)}%
-											</p>
-											<p class="text-[11px] text-end text-gray-500 dark:text-gray-400">
-												{(tickerData?.tradePrice - tickerData?.prevClosingPrice).toFixed(0)}
-											</p>
-										</div>
-										<div class="col-span-1 items-center text-[12px] text-end font-semibold text-gray-900 dark:text-white">
-											{calculateMillion(tickerData?.accTradePrice24h)}백만
-										</div>
-									</div>
-								</ListgroupItem>
-							{/each}
-						</Listgroup>
-					</TabItem>
-				{/each}
-			</Tabs>
+				<Card class="flex w-[480px] h-[500px] overflow-hidden"
+							padding="none"
+							size="none">
+					<OrderComponent
+						marketInfo={data.marketInfo} />
+				</Card>
+			</div>
+			<Card class="flex w-full h-[400px] overflow-hidden"
+						padding="none"
+						size="none">
+				<NewsFeedScrapResultComponent
+					marketInfo={data.marketInfo} />
+			</Card>
 		</div>
-	</Card>
+	</div>
+	<div class="grid grid-flow-row w-[600px] h-full gap-4 scrollbar-hide overflow-x-hidden overflow-y-auto">
+		<Card class="flex w-[600px] h-[700px] overflow-hidden"
+					padding="none"
+					size="none">
+			<TradeMarketPriceComponent
+				marketInfoList={data.marketInfoList} />
+		</Card>
+	</div>
 </main>

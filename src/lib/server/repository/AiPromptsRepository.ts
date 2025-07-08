@@ -4,23 +4,27 @@ import type {
 	AiPromptsUpdateRequestData
 } from '$lib/common/models/AiPromptsData';
 import { connectToDB } from '$lib/server/config/PGConfig';
+import { LoggingUtils } from '$lib/common/utils/LoggingUtils';
 
 export const AiPromptsRepository = {
 	findTopByUserIdAndId: findTopByUserIdAndId,
 	findAllByUserIdAndAiModelId: findAllByUserIdAndAiModelId,
 	findAllByUserIdAndAiModelIdAndDefaultYn: findAllByUserIdAndAiModelIdAndDefaultYn,
+	findAllByUserId: findAllByUserId,
 	findAllByUserIdAndIdIn: findAllByUserIdAndIdIn,
+	countAllByUserIdAndId: countAllByUserIdAndId,
 	insertAiPrompts: insertAiPrompts,
 	updateAiPrompts: updateAiPrompts,
-	updateAiPromptsDefaultYn: updateAiPromptsDefaultYn
+	updateAiPromptsDefaultYn: updateAiPromptsDefaultYn,
+	deleteAiPrompts: deleteAiPrompts
 };
 
 async function findTopByUserIdAndId(
 	userId: number,
-	aiPromptsId: number,
+	aiPromptsId: number
 ): Promise<AiPromptsEntity | null> {
 	const dbConn = await connectToDB();
-	
+
 	const query = `select *
                  from ai_prompts
                  where true
@@ -32,7 +36,7 @@ async function findTopByUserIdAndId(
 		const result = await dbConn.query(query, [userId, aiPromptsId]);
 		return result.rows[0] as AiPromptsEntity;
 	} catch (error) {
-		console.error('### AiPromptsRepository.findTopById Error: ' + error);
+		LoggingUtils.error('AiPromptsRepository.findTopByUserIdAndId', `${error}`);
 		return null;
 	} finally {
 		dbConn.release();
@@ -45,7 +49,7 @@ async function findAllByUserIdAndAiModelIdAndDefaultYn(
 	defaultYn: boolean
 ): Promise<AiPromptsEntity[]> {
 	const dbConn = await connectToDB();
-	
+
 	const query = `select *
                  from ai_prompts
                  where true
@@ -58,7 +62,27 @@ async function findAllByUserIdAndAiModelIdAndDefaultYn(
 		const result = await dbConn.query(query, [userId, aiModelId, defaultYn]);
 		return result.rows;
 	} catch (error) {
-		console.error('### AiPromptsRepository.findAllByUserIdAndAiModelId Error: ' + error);
+		LoggingUtils.error('AiPromptsRepository.findAllByUserIdAndAiModelIdAndDefaultYn', `${error}`);
+		return [];
+	} finally {
+		dbConn.release();
+	}
+}
+
+async function findAllByUserId(userId: number): Promise<AiPromptsEntity[]> {
+	const dbConn = await connectToDB();
+
+	const query = `select *
+                 from ai_prompts
+                 where true
+                   and deleted_at is null
+                   and user_id = $1;`;
+
+	try {
+		const result = await dbConn.query(query, [userId]);
+		return result.rows;
+	} catch (error) {
+		LoggingUtils.error('AiPromptsRepository.findAllByUserId', `${error}`);
 		return [];
 	} finally {
 		dbConn.release();
@@ -70,19 +94,19 @@ async function findAllByUserIdAndAiModelId(
 	aiModelId: number
 ): Promise<AiPromptsEntity[]> {
 	const dbConn = await connectToDB();
-	
+
 	const query = `select *
                  from ai_prompts
                  where true
                    and deleted_at is null
                    and user_id = $1
                    and ai_model_id = $2;`;
-	
+
 	try {
 		const result = await dbConn.query(query, [userId, aiModelId]);
 		return result.rows;
 	} catch (error) {
-		console.error('### AiPromptsRepository.findAllByUserIdAndAiModelId Error: ' + error);
+		LoggingUtils.error('AiPromptsRepository.findAllByUserIdAndAiModelId', `${error}`);
 		return [];
 	} finally {
 		dbConn.release();
@@ -94,20 +118,44 @@ async function findAllByUserIdAndIdIn(
 	aiPromptsIdList: number[]
 ): Promise<AiPromptsEntity[]> {
 	const dbConn = await connectToDB();
-	
+
 	const query = `select *
-								 from ai_prompts
-								 where true
-								   and deleted_at is null
-									 and user_id = $1
-									 and id = any($2);`;
+                 from ai_prompts
+                 where true
+                   and deleted_at is null
+                   and user_id = $1
+                   and id = any ($2);`;
 
 	try {
 		const result = await dbConn.query(query, [userId, aiPromptsIdList]);
 		return result.rows;
 	} catch (error) {
-		console.error('### AiPromptsRepository.findAllByUserIdAndIdIn Error: ' + error);
+		LoggingUtils.error('AiPromptsRepository.findAllByUserIdAndIdIn', `${error}`);
 		return [];
+	} finally {
+		dbConn.release();
+	}
+}
+
+async function countAllByUserIdAndId(
+	userId: number,
+	aiPromptsId: number
+): Promise<number | undefined> {
+	const dbConn = await connectToDB();
+
+	const query = `select count(*)
+                 from ai_prompts
+                 where true
+                   and deleted_at is null
+                   and user_id = $1
+                   and id = $2;`;
+
+	try {
+		const result = await dbConn.query(query, [userId, aiPromptsId]);
+		return result.rows[0].count;
+	} catch (error) {
+		LoggingUtils.error('AiPromptsRepository.countAllByUserId', `${error}`);
+		return undefined;
 	} finally {
 		dbConn.release();
 	}
@@ -118,7 +166,7 @@ async function insertAiPrompts(
 	createRequestData: AiPromptsCreateRequestData
 ): Promise<AiPromptsEntity | null> {
 	const dbConn = await connectToDB();
-	
+
 	const query = `
       INSERT INTO ai_prompts (user_id, ai_model_id, title, system_prompts_array, user_prompts_array, default_yn,
                               ai_response_models_id)
@@ -151,16 +199,18 @@ async function updateAiPrompts(
 	updateRequestData: AiPromptsUpdateRequestData
 ): Promise<AiPromptsEntity | null> {
 	const dbConn = await connectToDB();
-	
+
 	const query = `
       UPDATE ai_prompts
-      SET ai_model_id = $3,
-          title = $4,
-					system_prompts_array = $5,
-					user_prompts_array = $6,
-					default_yn = $7,
-					ai_response_models_id = $8
-      WHERE id = $1
+      SET ai_model_id           = $3,
+          title                 = $4,
+          system_prompts_array  = $5,
+          user_prompts_array    = $6,
+          default_yn            = $7,
+          ai_response_models_id = $8
+      WHERE true
+        and deleted_at is null
+        and id = $1
         and user_id = $2
       RETURNING *;
 	`;
@@ -179,7 +229,7 @@ async function updateAiPrompts(
 
 		return result.rows[0] as AiPromptsEntity;
 	} catch (error) {
-		console.error('### AiPromptsRepository.update Error: ' + error);
+		LoggingUtils.error('AiPromptsRepository.updateAiPrompts', `${error}`);
 		return null;
 	} finally {
 		dbConn.release();
@@ -192,21 +242,45 @@ async function updateAiPromptsDefaultYn(
 	defaultYn: boolean
 ): Promise<AiPromptsEntity | null> {
 	const dbConn = await connectToDB();
-	
+
 	const query = `
-			UPDATE ai_prompts
-			SET default_yn = $3
-			WHERE id = $1
-				and user_id = $2
-			RETURNING *;
+      UPDATE ai_prompts
+      SET default_yn = $3
+      WHERE true
+        and deleted_at is null
+        and id = $1
+        and user_id = $2
+      RETURNING *;
 	`;
 
 	try {
 		const result = await dbConn.query(query, [aiPromptsId, userId, defaultYn]);
 		return result.rows[0] as AiPromptsEntity;
 	} catch (error) {
-		console.error('### AiPromptsRepository.updateDefaultYn Error: ' + error);
+		LoggingUtils.error('AiPromptsRepository.updateAiPromptsDefaultYn', `${error}`);
 		return null;
+	} finally {
+		dbConn.release();
+	}
+}
+
+async function deleteAiPrompts(userId: number, aiPromptsId: number): Promise<boolean> {
+	const dbConn = await connectToDB();
+
+	const query = `
+      UPDATE ai_prompts
+      SET deleted_at = now()
+      WHERE true
+        and id = $1
+        and user_id = $2;
+	`;
+
+	try {
+		await dbConn.query(query, [aiPromptsId, userId]);
+		return true;
+	} catch (error) {
+		LoggingUtils.error('AiPromptsRepository.deleteAiPrompts', `${error}`);
+		return false;
 	} finally {
 		dbConn.release();
 	}

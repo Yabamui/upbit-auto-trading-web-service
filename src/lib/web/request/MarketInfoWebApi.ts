@@ -2,7 +2,7 @@ import type { MarketInfoData } from '$lib/common/models/MarketInfoData';
 import { CurrentStringUtils } from '$lib/common/utils/CurrentStringUtils';
 import { ApiPathCode, ApiPathCodeUtils } from '$lib/common/enums/ApiPathCode';
 import { ResponseObject } from '$lib/common/models/ResponseData';
-import { WebApiRequestUtils } from '$lib/web/api/WebApiRequestUtils';
+import { WebApiRequestUtils } from '$lib/web/request/WebApiRequestUtils';
 
 export const MarketInfoWebApi = {
 	getMarketInfo: getMarketInfo,

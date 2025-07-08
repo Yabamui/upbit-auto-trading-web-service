@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  # SvelteKit application
+  upbit-trading-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: upbit-trading-app
+    ports:
+      - "15000:3000"
+    env_file:
+      - .env.production
+    networks:
+      - db-network
+    restart: unless-stopped
+
+networks:
+  db-network:
+    external: true

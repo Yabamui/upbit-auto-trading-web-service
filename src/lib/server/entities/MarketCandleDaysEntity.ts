@@ -2,6 +2,7 @@ import type { CandleData } from '$lib/common/models/CandleData';
 import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
 
 export interface MarketCandleDaysEntity {
+	id: number;
 	timestamp: number;
 	market: string;
 	candle_date_time_utc: Date;

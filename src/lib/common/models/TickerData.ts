@@ -1,4 +1,6 @@
 import type { UTickerData } from '$lib/server/models/UPbitApiData';
+import { CurrentNumberUtils } from '$lib/common/utils/CurrentNumberUtils';
+import type { MarketInfoData } from '$lib/common/models/MarketInfoData';
 
 export interface TickerData {
 	market: string;
@@ -29,6 +31,24 @@ export interface TickerData {
 	timestamp: number;
 }
 
+export interface TickerCalculationData {
+	market: string;
+	koreanName: string;
+	englishName: string;
+	decimalDepth: number;
+	
+	openingPrice: number;
+	highPrice: number;
+	lowPrice: number;
+	tradePrice: number;
+	diffRate: number;
+	diffPrice: number;
+	accTradePrice: number;
+	accTradePrice24h: number;
+	accTradeVolume: number;
+	accTradeVolume24h: number;
+}
+
 export const TickerDataUtils = {
 	toTickerData: (uTickerData: UTickerData): TickerData => ({
 		market: uTickerData.market,
@@ -57,5 +77,21 @@ export const TickerDataUtils = {
 		lowest52WeekPrice: uTickerData.lowest_52_week_price,
 		lowest52WeekDate: uTickerData.lowest_52_week_date,
 		timestamp: uTickerData.timestamp
-	})
+	}),
+	toTickerCalculationData: (marketInfo: MarketInfoData, tickerData: TickerData): TickerCalculationData => ({
+		market: marketInfo.market,
+		koreanName: marketInfo.koreanName,
+		englishName: marketInfo.englishName,
+		decimalDepth: CurrentNumberUtils.getDecimalDepth(tickerData.tradePrice),
+		openingPrice: tickerData.openingPrice,
+		highPrice: tickerData.highPrice,
+		lowPrice: tickerData.lowPrice,
+		tradePrice: tickerData.tradePrice,
+		diffRate: CurrentNumberUtils.calculateRate(tickerData.tradePrice, tickerData.prevClosingPrice),
+		diffPrice: CurrentNumberUtils.subtractPrice(tickerData.tradePrice, tickerData.prevClosingPrice),
+		accTradePrice: tickerData.accTradePrice,
+		accTradePrice24h: tickerData.accTradePrice24h,
+		accTradeVolume: tickerData.accTradeVolume,
+		accTradeVolume24h: tickerData.accTradeVolume24h
+	}),
 };

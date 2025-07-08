@@ -1,4 +1,8 @@
 import { writable } from 'svelte/store';
+import type {
+	TickerCalculationData,
+	TickerData
+} from '$lib/common/models/TickerData';
 
 const initMarketCode = 'KRW-BTC';
 
@@ -26,4 +30,36 @@ function createCurrentMarketCodeStore(key: string) {
 	};
 }
 
+function createTickerCalculationStore() {
+	const { subscribe, set} = writable<string>(undefined);
+
+	return {
+		subscribe,
+		set: (value: TickerCalculationData | undefined) => {
+			if (value) {
+				set(JSON.stringify(value));
+			}
+		},
+	};
+}
+
+function createTickerListStore() {
+	const initValue = '[]';
+	
+	const { subscribe, set } = writable<string>(initValue);
+
+	return {
+		subscribe,
+		set: (value: TickerData[]) => {
+			if (value && value.length > 0) {
+				set(JSON.stringify(value));
+			} else {
+				set(initValue);
+			}
+		},
+	};
+}
+
 export const currentMarketCodeStore = createCurrentMarketCodeStore('marketCode');
+export const tickerCalculationStore = createTickerCalculationStore();
+export const tickerListStore = createTickerListStore();

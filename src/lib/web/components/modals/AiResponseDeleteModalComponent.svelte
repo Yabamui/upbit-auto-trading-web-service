@@ -5,12 +5,22 @@
 		Modal
 	} from 'flowbite-svelte';
 	import { ExclamationCircleOutline } from 'flowbite-svelte-icons';
-	import { AiAnalyticsWebApi } from '$lib/web/api/AiAnalyticsWebApi';
+	import { AiAnalyticsWebApi } from '$lib/web/request/AiAnalyticsWebApi';
 	import { ResponseCode } from '$lib/common/enums/ResponseCode';
 
-	let { modalOpenYn = $bindable(), id = $bindable(), deleteAiResponsesCallback } = $props();
+	let {
+		modalOpenYn = $bindable(),
+		id = $bindable(),
+		deleteAiResponsesCallback
+	}: {
+		modalOpenYn: boolean,
+		id: number,
+		deleteAiResponsesCallback: (id: number) => void
+	} = $props();
 
 	async function deleteAiResponses() {
+
+		const deletedAiResponsesId = id;
 
 		const responseObject = await AiAnalyticsWebApi.deleteAiResponses(id);
 
@@ -23,7 +33,7 @@
 
 		await new Promise((resolve) => setTimeout(resolve, 1000));
 
-		await deleteAiResponsesCallback();
+		await deleteAiResponsesCallback(deletedAiResponsesId);
 	}
 
 	function closeModal() {

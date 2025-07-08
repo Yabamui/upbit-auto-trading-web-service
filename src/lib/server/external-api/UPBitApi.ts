@@ -1,6 +1,12 @@
 import { CurrentStringUtils } from '$lib/common/utils/CurrentStringUtils';
 import { UPBitApiUrlCode, UPBitApiUrlCodeUtils } from '$lib/common/enums/UPBitApiUrlCode';
-import type { UCandleData, UMarketData, UTickerData } from '$lib/server/models/UPbitApiData';
+import type {
+	UCandleData,
+	UMarketData,
+	UOrderBookData,
+	UOrderBookSupportedLevelData,
+	UTickerData
+} from '$lib/server/models/UPbitApiData';
 import axios from 'axios';
 import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
 
@@ -13,7 +19,9 @@ export const UPBitApi = {
 	getCandleDays: getCandleDays,
 	getCandleWeeks: getCandleWeeks,
 	getCandleMonths: getCandleMonths,
-	getCandleYears: getCandleYears
+	getCandleYears: getCandleYears,
+	getOrderBook: getOrderBook,
+	getOrderBookSupportedLevel: getOrderBookSupportedLevel
 };
 
 async function getMarketList(): Promise<UMarketData[] | []> {
@@ -40,11 +48,7 @@ async function getTicker(markets: string): Promise<UTickerData[] | []> {
 	return await requestGET(url);
 }
 
-async function getCandleSeconds(
-	market: string,
-	to: string,
-	count: number
-): Promise<UCandleData[]> {
+async function getCandleSeconds(market: string, to: string, count: number): Promise<UCandleData[]> {
 	const params = await CurrentStringUtils.generateQueryParam({ market, count, to });
 
 	const url = UPBitApiUrlCodeUtils.getUrl(UPBitApiUrlCode.candleSeconds, params);
@@ -100,6 +104,27 @@ async function getCandleYears(market: string, to: string, count: number): Promis
 	const params = await CurrentStringUtils.generateQueryParam({ market, to, count });
 
 	const url = UPBitApiUrlCodeUtils.getUrl(UPBitApiUrlCode.candleYears, params);
+
+	return await requestGET(url);
+}
+
+async function getOrderBook(market: string, level: number = 0): Promise<UOrderBookData[]> {
+	const params = await CurrentStringUtils.generateQueryParam({
+		markets: market,
+		level: level,
+	});
+
+	const url = UPBitApiUrlCodeUtils.getUrl(UPBitApiUrlCode.orderBook, params);
+
+	return await requestGET(url);
+}
+
+async function getOrderBookSupportedLevel(
+	market: string
+): Promise<UOrderBookSupportedLevelData[]> {
+	const params = await CurrentStringUtils.generateQueryParam({ markets: market });
+
+	const url = UPBitApiUrlCodeUtils.getUrl(UPBitApiUrlCode.orderBookSupportedLevels, params);
 
 	return await requestGET(url);
 }

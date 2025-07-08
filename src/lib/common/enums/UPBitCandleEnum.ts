@@ -77,11 +77,23 @@ export const UPBitCandleTimeZones = {
 	kst: 'KST'
 };
 
-export const UPBitCandleUnitCodeUtils = {
+export const UPBitCandleEnumUtils = {
+	existCandleUnitYn: (candleUnitKey: string): boolean => {
+		return Object.values(UPBitCandleUnitEnum)
+			.some(
+				(item: UPBitCandleUnitCodeData): boolean => item.key === candleUnitKey
+			);
+	},
+	existCandleTimeZoneYn: (candleTimeZone: string): boolean => {
+		return Object.values(UPBitCandleTimeZones)
+			.some((item: string): boolean => item === candleTimeZone
+			);
+	},
 	getUPBitCandleUnitCode: (key: string): UPBitCandleUnitCodeData => {
-		return Object.values(UPBitCandleUnitEnum).find(
-			(item) => item.key === key
-		) as UPBitCandleUnitCodeData;
+		return Object.values(UPBitCandleUnitEnum)
+			.find(
+				(item) => item.key === key
+			) as UPBitCandleUnitCodeData;
 	},
 	getAiRequestUnit: () => {
 		return [

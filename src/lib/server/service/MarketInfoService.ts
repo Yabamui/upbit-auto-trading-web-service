@@ -5,6 +5,7 @@ import { UPBitApi } from '$lib/server/external-api/UPBitApi';
 
 export const MarketInfoService = {
 	getAllMarketInfoList: getAllMarketInfoList,
+	getMarketInfoListByMarketCurrency: getMarketInfoListByMarketCurrency,
 	getMarketInfo: getMarketInfo
 };
 
@@ -24,6 +25,19 @@ async function getAllMarketInfoList() {
 	const resultEntities = await MarketInfoRepository.saveAll(response);
 
 	return resultEntities.map((item) => MarketInfoDataUtils.toMarketInfoData(item));
+}
+
+async function getMarketInfoListByMarketCurrency(marketCurrency: string) {
+	const marketInfoEntityList: MarketInfoEntity[] =
+		await MarketInfoRepository.findAllByMarketLike(marketCurrency);
+	
+	if (!marketInfoEntityList.length) {
+		return [];
+	}
+	
+	return marketInfoEntityList.map((item) =>
+		MarketInfoDataUtils.toMarketInfoData(item)
+	);
 }
 
 async function getMarketInfo(market: string) {

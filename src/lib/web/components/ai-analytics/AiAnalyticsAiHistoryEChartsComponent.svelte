@@ -28,6 +28,7 @@
 		MapPinPlusIcon
 	} from 'lucide-svelte';
 	import type { AiAnalyticsHistoryEChartRequestData } from '$lib/common/models/AiAnalyticsData';
+	import Decimal from 'decimal.js';
 
 	let {
 		eChartRequestData,
@@ -40,6 +41,7 @@
 	const _markPoint: MarkPointOption = EChartsOptionUtils.getMarkPointOption();
 	const _markLine: MarkLineOption = EChartsOptionUtils.getMinMaxMarkLineOption();
 
+	let _eChartCount = $derived.by(getEChartCount);
 	let _showMarkPoint = $state(false);
 	let _showMarkLine = $state(false);
 	let _dataZoomStart = $state(50);
@@ -47,6 +49,7 @@
 	let _eChartsElement: HTMLDivElement | undefined = $state(undefined);
 	let _eCharts: echarts.ECharts | undefined = $state(undefined);
 	let _candleListByDateTimeRecord: Record<string, CandleData> = $state({});
+	let _decimalDepth = $state(0);
 	let _addCandleYn = $state(true);
 	let _addAccTradeVolumeYn = $state(false);
 	let _addMaYn = $state(false);
@@ -78,6 +81,15 @@
 	$effect(() => {
 		resizeDataZoom();
 	});
+
+	function getEChartCount() {
+		let eChartCount = 1;
+		if (_addAccTradeVolumeYn) {
+			eChartCount += 1;
+		}
+
+		return eChartCount;
+	}
 
 	async function initDataWithAiResponses(eChartRequestData: AiAnalyticsHistoryEChartRequestData) {
 		Promise.all([
@@ -122,6 +134,8 @@
 				eChartRequestData.dateTimeFormat
 			);
 
+			_decimalDepth = new Decimal(item.tradePrice).dp();
+
 			acc[dateTime] = item;
 			return acc;
 		}, {} as Record<string, CandleData>);
@@ -159,11 +173,9 @@
 
 		const seriesData = await getSeriesOptionList(dateTimeList);
 
-		const dataListInList = _addAccTradeVolumeYn ? [dateTimeList, dateTimeList] : [dateTimeList];
-
-		const gridOption = EChartsOptionUtils.getGridOption(dataListInList.length);
-		const xAxis = EChartsOptionUtils.getXAxisOption(dataListInList);
-		const yAxis = EChartsOptionUtils.getYAxisOption(dataListInList);
+		const gridOption = EChartsOptionUtils.getGridOption(_eChartCount);
+		const xAxis = EChartsOptionUtils.getXAxisOption(dateTimeList, _eChartCount);
+		const yAxis = EChartsOptionUtils.getYAxisOption(_eChartCount);
 
 		const legend = EChartsOptionUtils.getLegentOption(seriesData.itemNameList);
 
@@ -283,6 +295,7 @@
 					candleData.openingPrice > candleData.tradePrice ? 1 : -1
 				];
 			});
+
 			const accTradeVolumeSeriesOption = EChartsOptionUtils.getBarSeriesOption(
 				itemName,
 				tradeValueDataList,
@@ -305,47 +318,26 @@
 				return candleData.tradePrice;
 			});
 
-			const ma5SeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				'MA5',
-				EChartsOptionUtils.calculateMA(5, tradePriceList),
+			const periodList = [5, 15, 30];
+
+			const maSeriesOptionList = EChartsOptionUtils.getMASeriesOption(
+				'MA',
+				tradePriceList,
+				periodList,
 				0,
-				0,
-				'#FF0000'
+				_decimalDepth
 			);
 
-			const ma10SeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				'MA10',
-				EChartsOptionUtils.calculateMA(10, tradePriceList),
-				0,
-				0,
-				'#00FF00'
-			);
+			const itemNameList = maSeriesOptionList.map((item) => {
+				if (item.name) {
+					return item.name.toString();
+				}
 
-			const ma20SeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				'MA20',
-				EChartsOptionUtils.calculateMA(20, tradePriceList),
-				0,
-				0,
-				'#0000FF'
-			);
+				return '';
+			});
 
-			const ma30SeriesOption = EChartsOptionUtils.getLineSeriesOption(
-				'MA30',
-				EChartsOptionUtils.calculateMA(30, tradePriceList),
-				0,
-				0,
-				'#FF00FF'
-			);
-
-			seriesData.itemNameList.push('MA5');
-			seriesData.itemNameList.push('MA10');
-			seriesData.itemNameList.push('MA20');
-			seriesData.itemNameList.push('MA30');
-
-			seriesData.seriesList.push(ma5SeriesOption);
-			seriesData.seriesList.push(ma10SeriesOption);
-			seriesData.seriesList.push(ma20SeriesOption);
-			seriesData.seriesList.push(ma30SeriesOption);
+			seriesData.itemNameList.push(...itemNameList);
+			seriesData.seriesList.push(...maSeriesOptionList);
 		}
 
 		if (!eChartRequestData.inferenceList.length) {

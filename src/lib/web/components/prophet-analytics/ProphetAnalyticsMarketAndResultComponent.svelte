@@ -13,7 +13,6 @@
 	import type { ResponseObject } from '$lib/common/models/ResponseData';
 	import { ProphetAnalyticsWebApi } from '$lib/web/request/ProphetAnalyticsWebApi';
 	import { ResponseCode } from '$lib/common/enums/ResponseCode';
-	import moment from 'moment/moment';
 	import {
 		Card,
 		Input,
@@ -44,13 +43,15 @@
 	} from '$lib/common/models/TickerData';
 	import {
 		currentMarketCodeStore,
-		tickerCalculationStore
+		tickerCalculationStore,
+		tickerListStore
 	} from '$lib/stores/MarketStore';
 	import { page } from '$app/state';
 	import { goto } from '$app/navigation';
 	import { TickerWebApi } from '$lib/web/request/TickerWebApi';
-	import type { ProphetAnalyticsResultData } from '$lib/common/models/ProphetAnalyticsResultData';
 	import Decimal from 'decimal.js';
+	import { ProphetAnalyticsPriceTypeEnum } from '$lib/common/enums/ProphetAnalyticsPriceTypeEnum';
+	import moment from 'moment/moment';
 
 	const sortType = {
 		tradePrice: 'tradePrice',
@@ -61,20 +62,19 @@
 		resultDiffRate: 'resultDiffRate'
 	};
 
-	interface ProphetAnalyticsResultAndItemTableData {
+	interface TickerAndProphetAnalyticsResultData {
 		market: string;
 		koreanName: string;
 		englishName: string;
 		tradePrice: number;
-		decimal: number;
-		decimalAdd: number;
+		decimalDepth: number;
 		diffRate: number;
 		diffPrice: number;
 		accTradePrice24h: number;
-		priceList: (ProphetAnalyticsResultAndItemPriceData | null)[];
+		priceList: (TickerAndProphetAnalyticsResultPriceData | null)[];
 	}
 
-	interface ProphetAnalyticsResultAndItemPriceData {
+	interface TickerAndProphetAnalyticsResultPriceData {
 		price: number;
 		diffRate: number;
 		diffPrice: number;
@@ -91,50 +91,54 @@
 		marketInfoList: MarketInfoData[],
 		onChangeMarketInfoCallback: (
 			marketInfoData: MarketInfoData,
-			prophetAnalyticsResultData?: ProphetAnalyticsResultData | undefined
 		) => Promise<void>
 	} = $props();
 
+	let _initYn: boolean = $state(false);
 	let _marketCurrencyType: string = $state(MarketCurrencyCode.KRW.code);
-	let _candleType: string = $state(UPBitCandleUnitEnum.days.key);
+	let _candleUnit: string = $state(UPBitCandleUnitEnum.days.key);
 	let _candleTimeZone: string = $state(UPBitCandleTimeZones.utc);
-	let _startDate: string = $state(CurrentDateUtils.getNowDateString());
-	let _endDate: string = $state('');
-	let _resultAnItemList: ProphetAnalyticsResultAndItemData[] = $state([]);
+	let _priceType: string = $state(ProphetAnalyticsPriceTypeEnum.CLOSE_PRICE.key);
 	let _koreanNameYn: boolean = $state(true);
 	let _sortTargetIndex: number = $state(-1);
 	let _sortType: string = $state(sortType.diffRate);
 	let _sortAscDesc: boolean = $state(false);
 	let _dateTimeList: string[] = $state([]);
-	let _tickerDataByMarketRecord: Record<string, TickerData> = $state({});
-	let _resultAnItemTableDataList: ProphetAnalyticsResultAndItemTableData[] = $state([]);
-	// let _excludeMarketList: string[] = $state([
-	// 	'KRW-VIRTUAL',
-	// 	'KRW-VTHO',
-	// 	'KRW-ANIME'
-	// ]);
+	let _tickerByMarketRecord: Record<string, TickerData> = $state({});
+	let _tickerAndProphetAnalyticsResultList: TickerAndProphetAnalyticsResultData[] = $state.raw([]);
+	let _prophetResultPriceDataByDateTimeRecordByMarket: Record<string, Record<string, TickerAndProphetAnalyticsResultPriceData>> = $state({});
 	let _searchMarket: string = $state('');
-	let _tickerUpdateInterval: number = 1000 * 2;
+	let _searchExp = $derived.by(() => new RegExp(_searchMarket, 'i'));
 
-	onDestroy(() => {});
+	onDestroy(() => {
+		_marketCurrencyType = MarketCurrencyCode.KRW.code;
+		_candleUnit = UPBitCandleUnitEnum.days.key;
+		_candleTimeZone = UPBitCandleTimeZones.utc;
+		_koreanNameYn = true;
+		_sortTargetIndex = -1;
+		_sortType = sortType.diffRate;
+		_sortAscDesc = false;
+		_dateTimeList = [];
+		_tickerByMarketRecord = {};
+		_tickerAndProphetAnalyticsResultList = [];
+		_searchMarket = '';
+	});
 
 	onMount(async () => {
 		await initData();
-	});
 
-	$effect(() => {
-		if (reloadYn) {
-			reloadYn = false;
-			console.log('reload prophet analytics result table');
-			initData();
-		}
+		_initYn = true;
 	});
 
 	$effect(() => {
 		const tickerUpdateInterval = setInterval(async () => {
+			if (!_initYn) {
+				return;
+			}
+
 			await getTickerDataList();
-			await updateProphetAnalyticsResultAndItemTableData();
-		}, _tickerUpdateInterval);
+			await updateTickerAndProphetAnalyticsResultList();
+		}, 1000);
 
 		return () => {
 			clearInterval(tickerUpdateInterval);
@@ -142,20 +146,213 @@
 	});
 
 	async function initData() {
-		await getTickerDataList();
-		await getLatestProphetAnalyticsResultAndItemList();
-		await updateProphetAnalyticsResultAndItemTableData();
+		const marketCurrencyType = MarketCurrencyTypeUtils.getMarketCurrencyType(marketInfo.market);
 
-		if (_resultAnItemTableDataList.length > 0) {
-			const resultAndItemTableData = _resultAnItemTableDataList.find((item) => item.market === marketInfo.market);
+		if (marketCurrencyType) {
+			_marketCurrencyType = marketCurrencyType.code;
+		}
 
-			if (resultAndItemTableData) {
-				updateTickerCalculationStore(marketInfo, resultAndItemTableData);
-			}
+		await Promise.all([
+			getTickerDataList(),
+			getLatestProphetAnalyticsResultAndItemList()
+		]);
+
+		await updateTickerAndProphetAnalyticsResultList();
+
+		if (!_tickerAndProphetAnalyticsResultList.length) {
+			return;
+		}
+
+		const tickerAndProphetAnalyticsResult = _tickerAndProphetAnalyticsResultList.find((item) => item.market ===
+			marketInfo.market);
+
+		if (tickerAndProphetAnalyticsResult) {
+			updateTickerCalculationStore(marketInfo, tickerAndProphetAnalyticsResult);
 		}
 	}
 
-	function onclickMarketItem(resultAnItemTableData: ProphetAnalyticsResultAndItemTableData) {
+	async function getTickerDataList() {
+		const responseObject: ResponseObject<TickerData[]> =
+			await TickerWebApi.getTickerAll(_marketCurrencyType);
+
+		if (ResponseCode.success.code !== responseObject.code) {
+			_tickerByMarketRecord = {};
+			return;
+		}
+
+		const tickerList: TickerData[] = responseObject.data as TickerData[];
+
+		tickerListStore.set(tickerList);
+
+		_tickerByMarketRecord = tickerList.reduce((acc, item) => {
+			acc[item.market] = item;
+			return acc;
+		}, {} as Record<string, TickerData>);
+	}
+
+	async function getLatestProphetAnalyticsResultAndItemList() {
+
+		const startDate = moment().add(-1, 'days').utc().format(CurrentDateUtils.dateFormat);
+
+		const responseObject: ResponseObject<unknown> =
+			await ProphetAnalyticsWebApi.getLatestProphetAnalyticsResultList(
+				_marketCurrencyType,
+				_candleUnit,
+				_candleTimeZone,
+				_priceType,
+				startDate
+			);
+
+		if (ResponseCode.success.code !== responseObject.code) {
+			_dateTimeList = [];
+			return;
+		}
+
+		const resultAndItemList = responseObject.data as ProphetAnalyticsResultAndItemData[];
+
+		const dateTimeFormat = CurrentDateUtils.getFormat(_candleUnit);
+
+		_prophetResultPriceDataByDateTimeRecordByMarket = resultAndItemList
+			.filter((item) => item.resultItemList && item.resultItemList.length)
+			.reduce((acc, item) => {
+			const sortedResultItemList = item.resultItemList.sort((a, b) => a.ds.localeCompare(b.ds));
+
+			const startPrice = sortedResultItemList[0].yhat;
+
+			acc[item.result.market] = sortedResultItemList
+				.reduce((acc, subItem) => {
+					const dateTime = CurrentDateUtils.addHoursByString(subItem.ds, 9, dateTimeFormat);
+					const diffPrice = CurrentNumberUtils.subtractPrice(subItem.yhat, startPrice);
+					const diffRate = CurrentNumberUtils.calculateRate(subItem.yhat, startPrice);
+					acc[dateTime] = {
+						price: subItem.yhat,
+						diffRate: diffRate,
+						diffPrice: diffPrice
+					};
+					return acc;
+				}, {} as Record<string, TickerAndProphetAnalyticsResultPriceData>);
+			return acc;
+		}, {} as Record<string, Record<string, TickerAndProphetAnalyticsResultPriceData>>);
+	}
+
+	async function updateTickerAndProphetAnalyticsResultList() {
+		await Promise.all([getDateTimeList(), getMarketListByCurrencyType()])
+			.then((resolve) => {
+				const filteredMarketList = resolve[1];
+
+				_tickerAndProphetAnalyticsResultList = filteredMarketList.map((item) => {
+						const tickerData: TickerData = _tickerByMarketRecord[item.market];
+
+						if (!tickerData) {
+							return null;
+						}
+
+						const priceDecimal = new Decimal(tickerData.tradePrice);
+						const prevClosingPriceDecimal = new Decimal(tickerData.prevClosingPrice);
+
+						const decimalDepth = priceDecimal.dp() > prevClosingPriceDecimal.dp() ?
+							priceDecimal.dp() :
+							prevClosingPriceDecimal.dp();
+
+						const prophetResultPriceDataByDateTime =_prophetResultPriceDataByDateTimeRecordByMarket[item.market];
+
+						if (!prophetResultPriceDataByDateTime) {
+							return {
+								market: item.market,
+								koreanName: item.koreanName,
+								englishName: item.englishName,
+								tradePrice: tickerData.tradePrice,
+								decimalDepth: decimalDepth,
+								diffRate: CurrentNumberUtils.calculateRate(
+									tickerData.tradePrice,
+									tickerData.prevClosingPrice
+								),
+								diffPrice: CurrentNumberUtils.subtractPrice(
+									tickerData.tradePrice,
+									tickerData.prevClosingPrice
+								),
+								accTradePrice24h: tickerData.accTradePrice24h,
+								priceList: []
+							};
+						}
+
+						const priceList = _dateTimeList.map((dateTime) => {
+							if (!prophetResultPriceDataByDateTime[dateTime]) {
+								return null;
+							}
+
+							return prophetResultPriceDataByDateTime[dateTime];
+						});
+
+						return {
+							market: item.market,
+							koreanName: item.koreanName,
+							englishName: item.englishName,
+							tradePrice: tickerData.tradePrice,
+							decimalDepth: decimalDepth,
+							diffRate: CurrentNumberUtils.calculateRate(
+								tickerData?.tradePrice,
+								tickerData?.prevClosingPrice
+							),
+							diffPrice: CurrentNumberUtils.subtractPrice(
+								tickerData.tradePrice,
+								tickerData.prevClosingPrice
+							),
+							accTradePrice24h: tickerData.accTradePrice24h,
+							priceList: priceList
+						};
+					})
+					.filter((item) => item !== null);
+
+				sortResultAndItemTableData();
+			});
+	}
+
+	async function getDateTimeList() {
+
+		const maxDateTime = Object.values(_prophetResultPriceDataByDateTimeRecordByMarket).map((item) => {
+			return Object.keys(item)
+		})
+			.flatMap((item) => item)
+			.reduce((acc, item) => {
+				return acc.localeCompare(item) > 0 ? acc : item;
+			});
+
+		if (!maxDateTime) {
+			_dateTimeList = [];
+			return;
+		}
+
+		const startDatetime = CurrentDateUtils.getNowDateTimeString();
+		const endDatetime = CurrentDateUtils.toKSTStringByUTCString(
+			maxDateTime,
+			_candleTimeZone
+		);
+
+		_dateTimeList = CurrentDateUtils.getDateTimeList(startDatetime, endDatetime, _candleUnit);
+	}
+
+	async function getMarketListByCurrencyType() {
+		return marketInfoList
+			.filter((item) => item.market.startsWith(_marketCurrencyType))
+			.filter((item) => {
+				if (_searchMarket) {
+					return matchedMarket(item.market + item.koreanName + item.englishName);
+				}
+
+				return true;
+			});
+	}
+
+	async function onclickMarketCurrency(currencyType: string) {
+		_marketCurrencyType = currencyType;
+
+		await getTickerDataList();
+		await getLatestProphetAnalyticsResultAndItemList();
+		await updateTickerAndProphetAnalyticsResultList();
+	}
+
+	function onclickMarketItem(resultAnItemTableData: TickerAndProphetAnalyticsResultData) {
 		if (marketInfo.market === resultAnItemTableData.market) {
 			return;
 		}
@@ -171,14 +368,7 @@
 
 		currentMarketCodeStore.set(marketInfoData.market);
 
-		const resultAndItemData = _resultAnItemList
-			.find((item) => item.result.market === marketInfoData.market);
-
-		if (resultAndItemData) {
-			onChangeMarketInfoCallback(marketInfoData, resultAndItemData.result);
-		} else {
-			onChangeMarketInfoCallback(marketInfoData, undefined);
-		}
+		onChangeMarketInfoCallback(marketInfoData);
 
 		const url = page.url.pathname + '?code=' + marketInfoData.market;
 
@@ -187,244 +377,49 @@
 
 	function updateTickerCalculationStore(
 		marketInfoData: MarketInfoData,
-		resultAndItemData: ProphetAnalyticsResultAndItemTableData
+		resultAndItemData: TickerAndProphetAnalyticsResultData
 	) {
+
+		const ticker: TickerData = _tickerByMarketRecord[marketInfoData.market];
 
 		const tickerCalculationData: TickerCalculationData = {
 			market: marketInfoData.market,
 			koreanName: marketInfoData.koreanName,
 			englishName: marketInfoData.englishName,
-			tradePrice: resultAndItemData.tradePrice,
+			decimalDepth: resultAndItemData.decimalDepth,
+			openingPrice: ticker.openingPrice,
+			highPrice: ticker.highPrice,
+			lowPrice: ticker.lowPrice,
+			tradePrice: ticker.tradePrice,
 			diffRate: resultAndItemData.diffRate,
 			diffPrice: resultAndItemData.diffPrice,
-			accTradePrice24h: resultAndItemData.accTradePrice24h
+			accTradePrice: ticker.accTradePrice,
+			accTradePrice24h: ticker.accTradePrice24h,
+			accTradeVolume: ticker.accTradeVolume,
+			accTradeVolume24h: ticker.accTradeVolume24h
 		};
 
 		tickerCalculationStore.set(tickerCalculationData);
 	}
 
-	async function getTickerDataList() {
-		const responseObject: ResponseObject<TickerData[]> =
-			await TickerWebApi.getTickerAll(_marketCurrencyType);
+	function onchangeSearchMarket() {
+		console.log('onchangeSearchMarket');
 
-		if (ResponseCode.success.code !== responseObject.code) {
-			_tickerDataByMarketRecord = {};
+		if (!_tickerAndProphetAnalyticsResultList || _tickerAndProphetAnalyticsResultList.length === 0 || !_searchMarket) {
 			return;
 		}
 
-		const tickerData: TickerData[] = responseObject.data as TickerData[];
-
-		_tickerDataByMarketRecord = tickerData.reduce((acc, item) => {
-			acc[item.market] = item;
-			return acc;
-		}, {} as Record<string, TickerData>);
+		_tickerAndProphetAnalyticsResultList = _tickerAndProphetAnalyticsResultList.filter((item) => {
+			return matchedMarket(item.market + item.koreanName + item.englishName);
+		});
 	}
 
-	async function getLatestProphetAnalyticsResultAndItemList() {
-
-		const convertedDate = CurrentDateUtils.convertFormatWithTimeZone(_startDate, 'YYYY-MM-DD', _candleTimeZone);
-
-		const responseObject: ResponseObject<unknown> =
-			await ProphetAnalyticsWebApi.getProphetAnalyticsResultLatestList(
-				_marketCurrencyType,
-				_candleType,
-				_candleTimeZone,
-				convertedDate
-			);
-
-		if (ResponseCode.success.code !== responseObject.code) {
-			_resultAnItemList = [];
-			_dateTimeList = [];
-			return;
-		}
-
-		_resultAnItemList = responseObject.data as ProphetAnalyticsResultAndItemData[];
-	}
-
-	async function updateProphetAnalyticsResultAndItemTableData() {
-		getDateTimeList();
-
-		const filteredMarketList = marketInfoList
-			.filter((item) => item.market.startsWith(_marketCurrencyType));
-
-		if (_resultAnItemList.length === 0 || _dateTimeList.length === 0) {
-			_resultAnItemTableDataList = filteredMarketList.map((item) => {
-					const tickerData: TickerData = _tickerDataByMarketRecord[item.market];
-
-					if (!tickerData) {
-						return null;
-					}
-
-					const priceDecimal = new Decimal(tickerData.tradePrice);
-					const prevClosingPriceDecimal = new Decimal(tickerData.prevClosingPrice);
-
-					const decimal = priceDecimal.dp() > prevClosingPriceDecimal.dp() ?
-						priceDecimal.dp() :
-						prevClosingPriceDecimal.dp();
-
-					const decimalAdd = 10 ** decimal;
-
-					return {
-						market: item.market,
-						koreanName: item.koreanName,
-						englishName: item.englishName,
-						tradePrice: tickerData.tradePrice,
-						decimal: decimal,
-						decimalAdd: decimalAdd,
-						diffRate: calculateRate(tickerData.tradePrice, tickerData.prevClosingPrice),
-						diffPrice: subtractionPrice(tickerData.tradePrice, tickerData.prevClosingPrice),
-						accTradePrice24h: tickerData.accTradePrice24h,
-						priceList: []
-					};
-				})
-				.filter((item) => item !== null);
-
-			sortResultAndItemTableData();
-		}
-
-		let dateTimeFormat = 'YYYY-MM-DD HH';
-
-		if (UPBitCandleUnitEnum.days.key === _candleType) {
-			dateTimeFormat = 'YYYY-MM-DD';
-		}
-
-		const resultAndItemByMarketRecord = _resultAnItemList
-			.reduce((acc, item) => {
-				acc[item.result.market] = item;
-				return acc;
-			}, {} as Record<string, ProphetAnalyticsResultAndItemData>);
-
-		_resultAnItemTableDataList = filteredMarketList.map((item) => {
-				const tickerData: TickerData = _tickerDataByMarketRecord[item.market];
-
-				if (!tickerData) {
-					return null;
-				}
-
-				const priceDecimal = new Decimal(tickerData.tradePrice);
-				const prevClosingPriceDecimal = new Decimal(tickerData.prevClosingPrice);
-
-				const decimal = priceDecimal.dp() > prevClosingPriceDecimal.dp() ?
-					priceDecimal.dp() :
-					prevClosingPriceDecimal.dp();
-
-				const decimalAdd = 10 ** decimal;
-
-				const resultAnItem = resultAndItemByMarketRecord[item.market];
-
-				if (!resultAnItem) {
-					return {
-						market: item.market,
-						koreanName: item.koreanName,
-						englishName: item.englishName,
-						tradePrice: tickerData.tradePrice,
-						decimal: decimal,
-						decimalAdd: decimalAdd,
-						diffRate: calculateRate(tickerData.tradePrice, tickerData.prevClosingPrice),
-						diffPrice: subtractionPrice(tickerData.tradePrice, tickerData.prevClosingPrice),
-						accTradePrice24h: tickerData.accTradePrice24h,
-						priceList: []
-					};
-				}
-
-				const priceDataListByDateTimeRecord: Record<string, ProphetAnalyticsResultAndItemPriceData> =
-					resultAnItem.resultItemList.reduce((acc, item) => {
-						const dateTime = CurrentDateUtils.convertFormat(item.ds, dateTimeFormat);
-
-						if (acc[dateTime]) {
-							return acc;
-						}
-
-						const diffPrice = subtractionPrice(item.yhat, tickerData.tradePrice);
-						const diffRate = calculateRate(item.yhat, tickerData.tradePrice);
-
-						acc[dateTime] = {
-							price: item.yhat,
-							diffRate: diffRate,
-							diffPrice: diffPrice
-						};
-						return acc;
-					}, {} as Record<string, ProphetAnalyticsResultAndItemPriceData>);
-
-				const priceList = _dateTimeList.map((dateTime) => {
-					if (!priceDataListByDateTimeRecord[dateTime]) {
-						return null;
-					}
-
-					return priceDataListByDateTimeRecord[dateTime];
-				});
-
-				return {
-					market: item.market,
-					koreanName: item.koreanName,
-					englishName: item.englishName,
-					tradePrice: tickerData.tradePrice,
-					decimal: decimal,
-					decimalAdd: decimalAdd,
-					diffRate: calculateRate(tickerData?.tradePrice, tickerData?.prevClosingPrice),
-					diffPrice: subtractionPrice(tickerData.tradePrice, tickerData.prevClosingPrice),
-					accTradePrice24h: tickerData.accTradePrice24h,
-					priceList: priceList
-				};
-			})
-			.filter((item) => item !== null);
-
-		sortResultAndItemTableData();
-	}
-
-	function subtractionPrice(price: number, basePrice: number): number {
-		const priceDecimal = new Decimal(price);
-		const basePriceDecimal = new Decimal(basePrice);
-
-		return priceDecimal.minus(basePriceDecimal)
-			.toNumber();
-	}
-
-	function calculateRate(price: number, basePrice: number): number {
-		const priceDecimal = new Decimal(price);
-		const basePriceDecimal = new Decimal(basePrice);
-
-		return priceDecimal.minus(basePriceDecimal)
-			.dividedBy(basePriceDecimal)
-			.times(100)
-			.toNumber();
-	}
-
-	function getDateTimeList() {
-		let dateTimeFormat = 'YYYY-MM-DD HH';
-
-		if (UPBitCandleUnitEnum.days.key === _candleType) {
-			dateTimeFormat = 'YYYY-MM-DD';
-		}
-
-		if (_resultAnItemList.length === 0) {
-			_endDate = CurrentDateUtils.addDaysISOString(30);
-		} else {
-			_endDate = _resultAnItemList
-				.reduce((prev, current) => {
-					const date = current.resultItemList.reduce((p, c) => {
-						return p > c.ds ? p : c.ds;
-					}, '');
-
-					return prev > date ? prev : date;
-				}, '');
-		}
-
-		const startDate = moment(_startDate);
-		const endDateMoment = moment(_endDate);
-		const dateArray: string[] = [];
-		const addType = UPBitCandleUnitEnum.days.key === _candleType ? 'days' : 'hours';
-
-		while (startDate.isBefore(endDateMoment) || startDate.isSame(endDateMoment)) {
-			dateArray.push(CurrentDateUtils.convertFormat(startDate.format(), dateTimeFormat));
-			startDate.add(1, addType);
-		}
-
-		_dateTimeList = dateArray;
+	function matchedMarket(target: string) {
+		return _searchExp.exec(target);
 	}
 
 	function sortResultAndItemTableData() {
-		_resultAnItemTableDataList.sort((a, b) => {
+		_tickerAndProphetAnalyticsResultList.sort((a, b) => {
 			if (_sortType === sortType.tradePrice) {
 
 				const aPrice = a.tradePrice;
@@ -548,12 +543,6 @@
 
 		sortResultAndItemTableData();
 	}
-
-	function onclickMarketCurrency(currencyType: string) {
-		_marketCurrencyType = currencyType;
-
-		initData();
-	}
 </script>
 
 <Card class="flex w-full h-full"
@@ -561,22 +550,22 @@
 			size="none">
 	<Tabs class=""
 				tabStyle="underline">
-
 		<div class="flex w-full">
 			<Input id="search-navbar"
 						 class="ps-10"
 						 placeholder="Search..."
+						 onchange={() => onchangeSearchMarket()}
 						 bind:value={_searchMarket} />
 		</div>
 		{#each MarketCurrencyTypeUtils.getMainCurrencyTypeList() as currencyType}
 			<TabItem title={currencyType.name}
 							 onclick={() => onclickMarketCurrency(currencyType.code)}
 							 open={_marketCurrencyType === currencyType.code}>
-				<Table divClass="relative table-fixed w-full h-[750px] overflow-auto">
+				<Table divClass="relative table-fixed w-full h-[550px] overflow-auto">
 					<TableHead defaultRow={false}
 										 class="h-[40px]">
 						<tr>
-							<TableHeadCell class="min-w-[100px] text-start text-[12px] text-nowrap sticky top-0 left-0 z-10 bg-white dark:bg-gray-800"
+							<TableHeadCell class="min-w-[100px] text-start text-[12px] text-nowrap sticky top-0 left-0 left-shadow z-10 bg-white dark:bg-gray-800"
 														 padding="none"
 														 rowspan={2}
 														 onclick={() => _koreanNameYn  = !_koreanNameYn}>
@@ -585,7 +574,7 @@
 									<SortHorizontalOutline class="ms-1 w-4 h-4" />
 								</p>
 							</TableHeadCell>
-							<TableHeadCell class="min-w-[80px] items-center text-center text-nowrap sticky top-0 left-[100px] z-10 bg-white dark:bg-gray-800"
+							<TableHeadCell class="min-w-[80px] items-center text-center text-nowrap sticky top-0 bg-white dark:bg-gray-800"
 														 padding="none"
 														 rowspan={2}
 														 onclick={onclickTradePriceSort}>
@@ -602,7 +591,7 @@
 									{/if}
 								</p>
 							</TableHeadCell>
-							<TableHeadCell class="min-w-[80px] items-center text-center text-nowrap sticky top-0 left-[180px] z-10 bg-white dark:bg-gray-800"
+							<TableHeadCell class="min-w-[80px] items-center text-center text-nowrap sticky top-0 bg-white dark:bg-gray-800"
 														 padding="none"
 														 rowspan={2}
 														 onclick={onclickDiffRateSort}>
@@ -619,7 +608,7 @@
 									{/if}
 								</p>
 							</TableHeadCell>
-							<TableHeadCell class="min-w-[80px] items-center text-center text-nowrap sticky top-0 left-[260px] z-10 left-shadow bg-white dark:bg-gray-800"
+							<TableHeadCell class="min-w-[80px] items-center text-center text-nowrap sticky top-0 bg-white dark:bg-gray-800"
 														 padding="none"
 														 rowspan={2}
 														 onclick={onclickAccTradePrice24hSort}>
@@ -638,7 +627,7 @@
 							</TableHeadCell>
 							{#each _dateTimeList as dateTime}
 								<TableHeadCell colspan={2}
-															 class="min-w-40 h-[20px] items-center text-center sticky top-0 bg-white dark:bg-gray-800"
+															 class="min-w-40 h-[20px] items-center text-center text-nowrap sticky top-0 bg-white dark:bg-gray-800"
 															 padding="none">
 									<p class="text-[11px] font-medium text-gray-500 dark:text-gray-400">
 										{dateTime}
@@ -648,7 +637,7 @@
 						</tr>
 						<tr>
 							{#each _dateTimeList as dateTime, index}
-								<TableHeadCell class="min-w-20 h-[20px] p-0 items-center text-center sticky top-5 bg-white dark:bg-gray-800"
+								<TableHeadCell class="min-w-20 h-[20px] p-0 items-center text-center text-nowrap sticky top-5 bg-white dark:bg-gray-800"
 															 onclick={() => onclickResultPriceSort(index)}>
 									<p class="inline-flex text-[11px] font-medium text-nowrap text-gray-500 dark:text-gray-400">
 										예상금액
@@ -663,7 +652,7 @@
 										{/if}
 									</p>
 								</TableHeadCell>
-								<TableHeadCell class="min-w-20 h-[16px] p-0 items-center text-center sticky top-5 bg-white dark:bg-gray-800"
+								<TableHeadCell class="min-w-20 h-[16px] p-0 items-center text-center text-nowrap sticky top-5 bg-white dark:bg-gray-800"
 															 onclick={() => onclickResultDiffRateSort(index)}>
 									<p class="inline-flex text-[11px] font-medium text-nowrap text-gray-500 dark:text-gray-400">
 										예상 대비
@@ -681,9 +670,9 @@
 							{/each}
 						</tr>
 					</TableHead>
-					{#if _resultAnItemTableDataList.length > 0}
+					{#if _tickerAndProphetAnalyticsResultList.length > 0}
 						<TableBody>
-							{#each _resultAnItemTableDataList as tableData}
+							{#each _tickerAndProphetAnalyticsResultList as tableData}
 								{@const currentMarketBorder = marketInfo.market === tableData.market ?
 									'border-separate border-y border-primary-500 bg-primary-100 dark:bg-primary-800' :
 									''}
@@ -693,7 +682,7 @@
 								<TableBodyRow
 									class="h-[42px] {currentMarketBorder}"
 									onclick={() => onclickMarketItem(tableData)}>
-									<TableBodyCell class="text-start text-[12px] p-0 sticky left-0 bg-white dark:bg-gray-800 {currentMarketBorder}">
+									<TableBodyCell class="text-start text-[12px] p-0 sticky left-0 left-shadow bg-white dark:bg-gray-800 {currentMarketBorder}">
 										<p class="text-wrap text-[12px] font-medium leading-none">
 											{_koreanNameYn ? tableData.koreanName : tableData.englishName}
 										</p>
@@ -701,12 +690,12 @@
 											{tableData.market}
 										</p>
 									</TableBodyCell>
-									<TableBodyCell class="p-0 text-wrap text-end sticky left-[100px] bg-white dark:bg-gray-800 {diffColor} {currentMarketBorder}">
+									<TableBodyCell class="p-0 text-wrap text-end bg-white dark:bg-gray-800 {diffColor} {currentMarketBorder}">
 										<p class="text-[12px] font-medium">
-											{CurrentNumberUtils.numberWithCommas(tableData.tradePrice, tableData.decimal)}
+											{CurrentNumberUtils.numberWithCommas(tableData.tradePrice, tableData.decimalDepth)}
 										</p>
 									</TableBodyCell>
-									<TableBodyCell class="p-0 text-wrap text-end sticky left-[180px] bg-white dark:bg-gray-800 {diffColor} {currentMarketBorder}">
+									<TableBodyCell class="p-0 text-wrap text-end bg-white dark:bg-gray-800 {diffColor} {currentMarketBorder}">
 										<p class="items-center text-[12px] text-end font-semibold">
 											{CurrentNumberUtils.ceilPrice(tableData.diffRate, 2)}%
 										</p>
@@ -714,11 +703,11 @@
 
 											{CurrentNumberUtils.numberWithCommas(CurrentNumberUtils.ceilPrice(
 												tableData.diffPrice,
-												tableData.decimal
-											), tableData.decimal)}
+												tableData.decimalDepth
+											), tableData.decimalDepth)}
 										</p>
 									</TableBodyCell>
-									<TableBodyCell class="p-0 text-wrap text-end sticky left-[260px] left-shadow bg-white dark:bg-gray-800 {diffColor} {currentMarketBorder}">
+									<TableBodyCell class="p-0 text-wrap text-end bg-white dark:bg-gray-800 {diffColor} {currentMarketBorder}">
 										{#if tableData.accTradePrice24h > 1000000}
 											<p class="items-center text-[12px] text-end font-semibold text-gray-900 dark:text-white">
 												{CurrentNumberUtils.numberWithCommas(CurrentNumberUtils.divideCeil(
@@ -744,8 +733,8 @@
 												<TableBodyCell class="p-0 text-end text-[12px] {diffColor} {currentMarketBorder}">
 													{CurrentNumberUtils.numberWithCommas(CurrentNumberUtils.ceilPrice(
 														item.price,
-														tableData.decimal
-													), tableData.decimal)}
+														tableData.decimalDepth
+													), tableData.decimalDepth)}
 												</TableBodyCell>
 												<TableBodyCell class="p-0 text-end text-[12px] {diffColor} {currentMarketBorder}">
 													<p class="items-center text-[12px] text-end font-semibold">
@@ -754,8 +743,8 @@
 													<p class="text-[11px] text-end">
 														{CurrentNumberUtils.numberWithCommas(CurrentNumberUtils.ceilPrice(
 															item.diffPrice,
-															tableData.decimal
-														), tableData.decimal)}
+															tableData.decimalDepth
+														), tableData.decimalDepth)}
 													</p>
 												</TableBodyCell>
 											{:else }

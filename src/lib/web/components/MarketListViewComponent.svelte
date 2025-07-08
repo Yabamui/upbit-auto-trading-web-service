@@ -14,7 +14,11 @@
 		Tabs
 	} from 'flowbite-svelte';
 	import type { MarketInfoData } from '$lib/common/models/MarketInfoData';
-	import { currentMarketCodeStore } from '$lib/stores/MarketStore';
+	import {
+		currentMarketCodeStore,
+		tickerCalculationStore,
+		tickerListStore
+	} from '$lib/stores/MarketStore';
 	import { onMount } from 'svelte';
 	import { goto } from '$app/navigation';
 	import type { ResponseObject } from '$lib/common/models/ResponseData';
@@ -26,7 +30,12 @@
 	import { TickerWebApi } from '$lib/web/request/TickerWebApi';
 	import { ResponseCode } from '$lib/common/enums/ResponseCode';
 	import { CurrentNumberUtils } from '$lib/common/utils/CurrentNumberUtils';
-	import { SortHorizontalOutline, CaretSortSolid, CaretUpSolid, CaretDownSolid } from 'flowbite-svelte-icons';
+	import {
+		SortHorizontalOutline,
+		CaretSortSolid,
+		CaretUpSolid,
+		CaretDownSolid
+	} from 'flowbite-svelte-icons';
 
 	const sortTypeList = {
 		tradePrice: 'tradePrice',
@@ -52,11 +61,22 @@
 	let _tickerCalculationDataList: TickerCalculationData[] = $state.raw([]);
 	let _sortType = $state(sortTypeList.diffRate);
 	let _sortAscDesc = $state(false);
+	let _tickerUpdateInterval: number = 1000 * 5;
 
 	onMount(() => {
 		if (marketInfoDataList.length > 0) {
 			mountData();
 		}
+	});
+
+	$effect(() => {
+		const tickerUpdateInterval = setInterval(() => {
+			updateTickDataList();
+		}, _tickerUpdateInterval);
+
+		return () => {
+			clearInterval(tickerUpdateInterval);
+		};
 	});
 
 	$inspect(_marketCurrencyType)
@@ -83,6 +103,13 @@
 			return;
 		}
 
+		const tickerCalculationData: TickerCalculationData | undefined =
+			_tickerCalculationDataList.find((item) => item.market === market);
+
+		if (tickerCalculationData) {
+			tickerCalculationStore.set(tickerCalculationData);
+		}
+
 		currentMarketCodeStore.set(market);
 
 		marketInfoData = _marketInfoData;
@@ -101,7 +128,11 @@
 			return [];
 		}
 
-		return responseObject.data as TickerData[];
+		const tickerList = responseObject.data as TickerData[];
+
+		tickerListStore.set(tickerList);
+
+		return tickerList;
 	}
 
 	async function updateTickDataList() {
@@ -136,30 +167,47 @@
 			return;
 		}
 
-		console.log('sortTickerCalculationDataList');
+		_tickerCalculationDataList = tickerCalculationDataList
+			.sort((a, b) => {
+				if (_sortType === sortTypeList.tradePrice) {
+					if (_sortAscDesc) {
+						return a.tradePrice - b.tradePrice;
+					} else {
+						return b.tradePrice - a.tradePrice;
+					}
+				} else if (_sortType === sortTypeList.diffRate) {
+					if (_sortAscDesc) {
+						return a.diffRate - b.diffRate;
+					} else {
+						return b.diffRate - a.diffRate;
+					}
+				} else if (_sortType === sortTypeList.accTradePrice24h) {
+					if (_sortAscDesc) {
+						return a.accTradePrice24h - b.accTradePrice24h;
+					} else {
+						return b.accTradePrice24h - a.accTradePrice24h;
+					}
+				}
 
-		_tickerCalculationDataList = tickerCalculationDataList.sort((a, b) => {
-			if (_sortType === sortTypeList.tradePrice) {
-				if (_sortAscDesc) {
-					return a.tradePrice - b.tradePrice;
-				} else {
-					return b.tradePrice - a.tradePrice;
-				}
-			} else if (_sortType === sortTypeList.diffRate) {
-				if (_sortAscDesc) {
-					return a.diffRate - b.diffRate;
-				} else {
-					return b.diffRate - a.diffRate;
-				}
-			} else if (_sortType === sortTypeList.accTradePrice24h) {
-				if (_sortAscDesc) {
-					return a.accTradePrice24h - b.accTradePrice24h;
-				} else {
-					return b.accTradePrice24h - a.accTradePrice24h;
-				}
-			}
+				return 0;
+			});
+	}
 
-			return 0;
+	function filterTickerCalculationDataList() {
+		if (!_tickerCalculationDataList || _tickerCalculationDataList.length === 0) {
+			return [];
+		}
+
+		if (!_searchMarket) {
+			return _tickerCalculationDataList;
+		}
+
+		const regExp = new RegExp(_searchMarket, 'i');
+
+		return _tickerCalculationDataList.filter((item) => {
+			const target = item.market + item.koreanName + item.englishName;
+
+			return regExp.exec(target);
 		});
 	}
 
@@ -197,7 +245,7 @@
 	}
 </script>
 
-<Card class="flex w-full h-[900px] overflow-y-auto"
+<Card class="md:flex md:w-full w-full h-full overflow-y-auto"
 			padding="none"
 			size="none">
 	<Tabs class="sticky top-0 z-10 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-lg border-b border-gray-200 dark:border-gray-700  shadow-lg "
@@ -219,7 +267,8 @@
 						<TableHeadCell class="p-0 items-center text-center"
 													 onclick={() => _koreanNameYn  = !_koreanNameYn}>
 							<p class="inline-flex text-[11px] font-medium text-gray-500 dark:text-gray-400">
-								{_koreanNameYn ? '한글명' : '영문명'}<SortHorizontalOutline class="ms-1 w-4 h-4" />
+								{_koreanNameYn ? '한글명' : '영문명'}
+								<SortHorizontalOutline class="ms-1 w-4 h-4" />
 							</p>
 						</TableHeadCell>
 						<TableHeadCell class="p-0 items-center text-center"
@@ -269,8 +318,10 @@
 						</TableHeadCell>
 					</TableHead>
 					<TableBody>
-						{#each _tickerCalculationDataList as item (item.market)}
-							{@const diffColor = item.diffPrice > 0 ? 'text-red-500' : item.diffPrice < 0 ? 'text-blue-500' : 'text-gray-500'}
+						{#each filterTickerCalculationDataList() as item (item.market)}
+							{@const diffColor = item.diffPrice > 0 ?
+								'text-red-500' :
+								item.diffPrice < 0 ? 'text-blue-500' : 'text-gray-500'}
 							<TableBodyRow
 								class={marketInfoData.market === item.market ? 'bg-gray-100 dark:bg-gray-800' : ''}
 								onclick={() => clickMarketItem(item.market)}>
@@ -284,24 +335,36 @@
 								</TableBodyCell>
 								<TableBodyCell class="p-0 text-wrap text-end {diffColor}">
 									<p class="text-[12px] font-medium">
-										{CurrentNumberUtils.numberWithCommas(item.tradePrice, 0)}
+										{CurrentNumberUtils.numberWithCommas(item.tradePrice, item.decimalDepth)}
 									</p>
 								</TableBodyCell>
 								<TableBodyCell class="p-0 text-wrap text-end {diffColor}">
 									<p class="items-center text-[12px] text-end font-semibold">
-										{item.diffRate.toFixed(2)}%
+										{CurrentNumberUtils.ceilPrice(item.diffRate, 2)}%
 									</p>
 									<p class="text-[11px] text-end">
-										{item.diffPrice.toFixed(0)}
+										{CurrentNumberUtils.numberWithCommas(CurrentNumberUtils.ceilPrice(
+											item.diffPrice,
+											item.decimalDepth
+										), item.decimalDepth)}
 									</p>
 								</TableBodyCell>
 								<TableBodyCell class="p-0 text-wrap text-end">
-									<p class="items-center text-[12px] text-end font-semibold text-gray-900 dark:text-white">
-										{CurrentNumberUtils.numberWithCommas(item.accTradePrice24h, 0)}
-									</p>
-									<p class="text-[11px] text-gray-500 dark:text-gray-400">
-										백만
-									</p>
+									{#if item.accTradePrice24h > 1000000}
+										<p class="items-center text-[12px] text-end font-semibold text-gray-900 dark:text-white">
+											{CurrentNumberUtils.numberWithCommas(CurrentNumberUtils.divideCeil(
+												item.accTradePrice24h,
+												1000000
+											), 0)}
+										</p>
+										<p class="text-[11px] text-gray-500 dark:text-gray-400">
+											백만
+										</p>
+									{:else }
+										<p class="items-center text-[12px] text-end font-semibold">
+											{CurrentNumberUtils.numberWithCommas(item.accTradePrice24h, 0)}
+										</p>
+									{/if}
 								</TableBodyCell>
 							</TableBodyRow>
 						{/each}

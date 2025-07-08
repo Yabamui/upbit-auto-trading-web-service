@@ -1,20 +1,19 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import devtoolsJson from 'vite-plugin-devtools-json';
 
 export default defineConfig({
-	plugins: [sveltekit()],
+	plugins: [sveltekit(), devtoolsJson()],
 	server: {
 		port: 15001,
 		strictPort: true,
-		cors: true
+		cors: false,
 	},
 	optimizeDeps: {
-		exclude: [
-		
-		]
+		exclude: []
 	},
 	
-	resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
+	// resolve: process.env.VITEST ? { conditions: ['browser'] } : undefined,
 	
 	test: {
 		globals: true,

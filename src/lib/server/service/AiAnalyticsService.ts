@@ -1,9 +1,15 @@
-import type {
-	AiResponsesData,
-	AiResponsesTodayInferenceData
+import {
+	type AiInferenceData,
+	type AiInferenceItemData,
+	type AiLatestInferenceData,
+	type AiResponsesCreateRequestData
 } from '$lib/common/models/AiResponsesData';
 import { AiResponsesRepository } from '$lib/server/repository/AiResponsesRepository';
-import { AiResponsesEntityUtils } from '$lib/server/entities/AiResponsesEntity';
+import {
+	type AiLatestInferenceEntity,
+	type AiResponsesEntity,
+	AiResponsesEntityUtils
+} from '$lib/server/entities/AiResponsesEntity';
 import { type AiModelEntity, AiModelEntityUtils } from '$lib/server/entities/AiModelEntity';
 import { AiModelRepository } from '$lib/server/repository/AiModelRepository';
 import { AIModelCode } from '$lib/common/enums/AIModelCode';
@@ -13,17 +19,21 @@ import {
 	type AiResponseModelsEntity,
 	AiResponseModelsEntityUtils
 } from '$lib/server/entities/AiResponseModelsEntity';
-import type { AiResponseModelsData } from '$lib/common/models/AiResponseModelsData';
+import {
+	AiResponseModelDataUtils,
+	type AiResponseModelProperty,
+	type AiResponseModelPropertyItem,
+	type AiResponseModelsData
+} from '$lib/common/models/AiResponseModelsData';
 import { AiPromptsRepository } from '$lib/server/repository/AiPromptsRepository';
-import type {
-	AiPromptsCreateRequestData,
-	AiPromptsData,
-	AiPromptsUpdateRequestData
+import {
+	type AiPromptsCreateRequestData,
+	type AiPromptsData,
+	AiPromptsDataUtils,
+	type AiPromptsUpdateRequestData
 } from '$lib/common/models/AiPromptsData';
 import { type AiPromptsEntity, AiPromptsEntityUtils } from '$lib/server/entities/AiPromptsEntity';
 import { MarketInfoRepository } from '$lib/server/repository/MarketInfoRepository';
-import { AiAnalyticsRequestRepository } from '$lib/server/repository/AiAnalyticsRequestRepository';
-import type { AiAnalyticsRequestEntity } from '$lib/server/entities/AiAnalyticsRequestEntity';
 import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
 import { ResponseCode } from '$lib/common/enums/ResponseCode';
 import type { ResponseSchema } from '@google/generative-ai';
@@ -34,28 +44,45 @@ import {
 	type AiRequestModelCase1DataItem,
 	AiRequestModelDataUtils
 } from '$lib/common/models/AiRequestModelData';
-import { CandleTypeZoneCode } from '$lib/common/enums/CandleTypeZoneCode';
 import type { MarketInfoEntity } from '$lib/server/entities/MarketInfoEntity';
+import {
+	type AiAnalyticsRequestSchedulerCreateData,
+	type AiAnalyticsRequestSchedulerData,
+	AiAnalyticsRequestSchedulerDataUtils,
+	type AiAnalyticsRequestSchedulerUpdateData
+} from '$lib/common/models/AiAnalyticsRequestSchedulerData';
+import { AiAnalyticsRequestSchedulerRepository } from '$lib/server/repository/AiAnalyticsRequestSchedulerRepository';
+import {
+	type AiAnalyticsRequestSchedulerEntity,
+	AiAnalyticsRequestSchedulerEntityUtils
+} from '$lib/server/entities/AiAnalyticsRequestSchedulerEntity';
+import { CurrentNumberUtils } from '$lib/common/utils/CurrentNumberUtils';
+import { UPBitCandleTimeZones, UPBitCandleUnitEnum } from '$lib/common/enums/UPBitCandleEnum';
+import moment from 'moment';
 
 export const AiAnalyticsService = {
 	getAiModelList: getAiModelList,
 
-	createAiResponses: createAiResponses,
-	createAiResponsesByAiAnalyticsRequest: createAiResponsesByAiAnalyticsRequest,
-	createAiAnalyticsRequest: createAiAnalyticsRequest,
-
 	getAiResponses: getAiResponses,
+	getAiResponsesList: getAiResponsesList,
+	getAiLatestInferenceList: getAiLatestInferenceList,
+	createAiResponses: createAiResponses,
+	deleteAiResponses: deleteAiResponses,
+
 	getAiResponseModelsList: getAiResponseModelsList,
+
 	getAiPromptsList: getAiPromptsList,
-
-	getAiResponsesTodayInference: getAiResponsesTodayInference,
-
 	createAiPrompts: createAiPrompts,
 	updateAiPrompts: updateAiPrompts,
+	deleteAiPrompts: deleteAiPrompts,
 
-	deleteAiResponses: deleteAiResponses
+	getAiAnalyticsRequestSchedulerList: getAiAnalyticsRequestSchedulerList,
+	createAiAnalyticsRequestScheduler: createAiAnalyticsRequestScheduler,
+	updateAiAnalyticsRequestScheduler: updateAiAnalyticsRequestScheduler,
+	deleteAiAnalyticsRequestScheduler: deleteAiAnalyticsRequestScheduler
 };
 
+// Ai Model
 async function getAiModelList() {
 	const aiModelEntityList: AiModelEntity[] = await AiModelRepository.findAll();
 
@@ -64,16 +91,89 @@ async function getAiModelList() {
 	});
 }
 
-async function createAiResponses(
+// Ai Responses
+async function getAiResponses(
 	userId: number,
+	aiResponsesId: number,
+	market: string
+): Promise<AiInferenceData | null> {
+	
+	const entity: AiResponsesEntity | null =
+		await AiResponsesRepository.findTopByUserIdAndIdAndMarket(userId, aiResponsesId, market);
+
+	if (!entity) {
+		return null;
+	}
+
+	return getAiInferenceData(entity, true);
+}
+
+async function getAiResponsesList(market: string, userId: string): Promise<AiInferenceData[]> {
+	if (!userId || !market) {
+		return [];
+	}
+
+	const entities: AiResponsesEntity[] = await AiResponsesRepository.findAllByUserIdAndMarket(
+		parseInt(userId),
+		market
+	);
+
+	if (entities.length === 0) {
+		return [];
+	}
+
+	return entities.map((item) => {
+		return getAiInferenceData(item, true);
+	});
+}
+
+async function getAiLatestInferenceList(
+	userId: number,
+	marketCurrency: string,
 	market: string,
-	aiModelId: number,
-	aiPromptId: number,
-	candleType: string,
-	candleCount: number,
-	candleTimeZone: string
-) {
-	const aiModelEntity: AiModelEntity | null = await AiModelRepository.findTopById(aiModelId);
+	candleUnit: string,
+	candleTimeZone: string,
+	judgementYn: boolean
+): Promise<AiLatestInferenceData[]> {
+	if (!userId || !candleUnit || !candleTimeZone) {
+		return [];
+	}
+	
+	const nowDateUtc = CurrentDateUtils.getNowDateString(candleTimeZone);
+
+	let entities: AiLatestInferenceEntity[] = []
+	
+	if (marketCurrency) {
+		entities = await AiResponsesRepository.findAllLatestByUserIdAndMarketLikeAndCandleUnitAndCandleTimeZone(
+			userId,
+			marketCurrency,
+			candleUnit,
+			candleTimeZone,
+			nowDateUtc
+		);
+	} else if (market) {
+		entities = await AiResponsesRepository.findAllLatestByUserIdAndMarketAndCandleUnitAndCandleTimeZone(
+			userId,
+			market,
+			candleUnit,
+			candleTimeZone,
+			nowDateUtc
+		);
+	}
+
+	if (entities.length === 0) {
+		return [];
+	}
+
+	return entities.map((entity: AiLatestInferenceEntity): AiLatestInferenceData => {
+		return AiResponsesEntityUtils.toAiLatestInferenceData(entity, judgementYn);
+	});
+}
+
+async function createAiResponses(userId: number, createRequestData: AiResponsesCreateRequestData) {
+	const aiModelEntity: AiModelEntity | null = await AiModelRepository.findTopById(
+		createRequestData.aiModelId
+	);
 
 	if (aiModelEntity === null) {
 		console.error(
@@ -89,7 +189,7 @@ async function createAiResponses(
 		return null;
 	}
 
-	const marketEntity = await MarketInfoRepository.findTopByMarket(market);
+	const marketEntity = await MarketInfoRepository.findTopByMarket(createRequestData.market);
 
 	if (marketEntity === null) {
 		console.error(
@@ -100,7 +200,7 @@ async function createAiResponses(
 
 	const aiPromptEntity: AiPromptsEntity | null = await AiPromptsRepository.findTopByUserIdAndId(
 		userId,
-		aiPromptId
+		createRequestData.aiPromptsId
 	);
 
 	if (aiPromptEntity === null || !aiPromptEntity.ai_response_models_id) {
@@ -124,9 +224,9 @@ async function createAiResponses(
 
 	const requestModelData: AiRequestModelCase1Data | null = await getAiRequestModelCase1Data(
 		marketEntity,
-		candleType,
-		candleCount,
-		candleTimeZone
+		createRequestData.candleUnit,
+		createRequestData.candleCount,
+		createRequestData.candleTimeZone
 	);
 
 	if (requestModelData === null) {
@@ -153,14 +253,14 @@ async function createAiResponses(
 
 	const aiResponseEntity = await AiResponsesRepository.insertAiResponses(
 		userId,
-		market,
+		createRequestData.market,
 		aiModelEntity.id,
 		aiPromptEntity.id,
 		aiPromptEntity.ai_response_models_id,
 		JSON.parse(responseText),
-		candleType,
-		candleCount,
-		candleTimeZone,
+		createRequestData.candleUnit,
+		createRequestData.candleCount,
+		createRequestData.candleTimeZone,
 		requestModelData.beginDate,
 		requestModelData.endDate
 	);
@@ -168,164 +268,11 @@ async function createAiResponses(
 	return aiResponseEntity?.id || null;
 }
 
-async function createAiResponsesByAiAnalyticsRequest(requestLimitCount: number) {
-	const requestYn = false;
-
-	const aiAnalyticsRequestEntities: AiAnalyticsRequestEntity[] =
-		await AiAnalyticsRequestRepository.findAllByRequestYnLimit(requestYn, requestLimitCount);
-
-	if (aiAnalyticsRequestEntities.length === 0) {
-		return;
-	}
-
-	const analyticsRequestEntitiesByUserIdRecord: Record<number, AiAnalyticsRequestEntity[]> =
-		aiAnalyticsRequestEntities.reduce(
-			(acc, item) => {
-				if (!acc[item.user_id]) {
-					acc[item.user_id] = [];
-				}
-
-				acc[item.user_id].push(item);
-
-				return acc;
-			},
-			{} as Record<number, AiAnalyticsRequestEntity[]>
-		);
-
-	for (const key in analyticsRequestEntitiesByUserIdRecord) {
-		const userId = parseInt(key);
-		const entities = analyticsRequestEntitiesByUserIdRecord[userId];
-
-		for (const entity of entities) {
-			const aiResponsesId = await createAiResponses(
-				userId,
-				entity.market,
-				entity.ai_model_id,
-				entity.ai_prompts_id,
-				entity.candle_type,
-				entity.candle_count,
-				entity.candle_time_zone
-			);
-
-			if (!aiResponsesId) {
-				entity.request_yn = true;
-				entity.result_code = ResponseCode.notFound.code;
-				entity.result = ResponseCode.notFound.message;
-			} else {
-				entity.request_yn = true;
-				entity.result_code = ResponseCode.success.code;
-				entity.result = ResponseCode.success.message;
-				entity.ai_response_id = aiResponsesId;
-			}
-
-			await AiAnalyticsRequestRepository.updateAiAnalyticsRequest(entity);
-		}
-	}
-}
-
-async function createAiAnalyticsRequest(
-	userId: number,
-	marketCurrency: string,
-	aiModelId: number,
-	aiPromptsId: number,
-	candleType: string,
-	candleCount: number,
-	candleTimeZone: string
-) {
-	const requestYn = false;
-
-	const aiModelEntity: AiModelEntity | null = await AiModelRepository.findTopById(aiModelId);
-
-	if (aiModelEntity === null) {
-		console.log(
-			`${CurrentDateUtils.getNowDateTimeString()} :: ### jobCreateAiAnalyticsRequest aiModelEntity is null`
-		);
-
-		return;
-	}
-	
-	const aiPromptsEntity: AiPromptsEntity | null = await AiPromptsRepository.findTopByUserIdAndId(
-		userId,
-		aiPromptsId
-	);
-	
-	if (aiPromptsEntity === null) {
-		console.log(
-			`${CurrentDateUtils.getNowDateTimeString()} :: ### jobCreateAiAnalyticsRequest aiPromptsEntity is null`
-		);
-
-		return;
-	}
-	
-	if (aiPromptsEntity.ai_response_models_id === null) {
-		console.log(
-			`${CurrentDateUtils.getNowDateTimeString()} :: ### jobCreateAiAnalyticsRequest aiPromptsEntity.ai_response_models_id is null`
-		);
-
-		return;
-	}
-
-	const marketEntities = await MarketInfoRepository.findAllByMarketLike(marketCurrency);
-
-	if (marketEntities.length === 0) {
-		console.log(
-			`${CurrentDateUtils.getNowDateTimeString()} :: ### jobCreateAiAnalyticsRequest marketEntities is empty`
-		);
-
-		return;
-	}
-
-	let resultCount = 0;
-
-	for (const marketEntity of marketEntities) {
-		const aiAnalyticsRequestCreateRequestData = {
-			userId: userId,
-			market: marketEntity.market,
-			aiModelId: aiModelId,
-			aiPromptsId: aiPromptsId,
-			candleType: candleType,
-			candleCount: candleCount,
-			candleTimeZone: candleTimeZone,
-			requestYn: requestYn
-		};
-
-		const aiAnalyticsRequestEntity = await AiAnalyticsRequestRepository.insertAiAnalyticsRequest(
-			aiAnalyticsRequestCreateRequestData
-		);
-
-		if (aiAnalyticsRequestEntity !== null) {
-			resultCount += 1;
-		}
-	}
-
-	console.log(
-		`${CurrentDateUtils.getNowDateTimeString()} :: ### jobCreateAiAnalyticsRequest resultCount : ${resultCount}`
-	);
-}
-
-async function getAiResponses(market: string, userId: string): Promise<AiResponsesData[]> {
-	const entities = await AiResponsesRepository.findAllByUserIdAndMarket(parseInt(userId), market);
-
-	const aiModelEntityList: AiModelEntity[] = await AiModelRepository.findAll();
-
-	const idAndAiModelRecord = aiModelEntityList.reduce(
-		(acc, item) => {
-			acc[item.id] = item;
-			return acc;
-		},
-		{} as Record<number, AiModelEntity>
-	);
-
-	return entities.map((item) => {
-		const aiModelEntity = idAndAiModelRecord[item.ai_model_id];
-		return AiResponsesEntityUtils.toAiResponsesData(item, aiModelEntity);
-	});
-}
-
 async function deleteAiResponses(userId: number, id: number): Promise<boolean> {
 	return await AiResponsesRepository.deleteAiResponses(userId, id);
 }
 
+// Ai Response Models
 async function getAiResponseModelsList(aiModelId: number): Promise<AiResponseModelsData[]> {
 	const aiResponseModelsEntities: AiResponseModelsEntity[] =
 		await AiResponseModelsRepository.findAllByAiModelId(aiModelId);
@@ -335,9 +282,16 @@ async function getAiResponseModelsList(aiModelId: number): Promise<AiResponseMod
 	});
 }
 
+// Ai Prompts
 async function getAiPromptsList(userId: number, aiModelId: number): Promise<AiPromptsData[]> {
+	if (!userId) {
+		return [];
+	}
+
 	const aiPromptsEntities: AiPromptsEntity[] =
-		await AiPromptsRepository.findAllByUserIdAndAiModelId(userId, aiModelId);
+		aiModelId === 0
+			? await AiPromptsRepository.findAllByUserId(userId)
+			: await AiPromptsRepository.findAllByUserIdAndAiModelId(userId, aiModelId);
 
 	return aiPromptsEntities.map((item) => {
 		return AiPromptsEntityUtils.toAiPromptsData(item);
@@ -348,6 +302,12 @@ async function createAiPrompts(
 	userId: number,
 	createRequestData: AiPromptsCreateRequestData
 ): Promise<number | null> {
+	const validResult = AiPromptsDataUtils.validCreateData(createRequestData);
+
+	if (!validResult.valid) {
+		throw new Error(validResult.message);
+	}
+
 	if (createRequestData.defaultYn) {
 		await unsetDefaultYn(userId, createRequestData.aiModelId);
 	}
@@ -365,6 +325,12 @@ async function updateAiPrompts(
 	userId: number,
 	updateRequestData: AiPromptsUpdateRequestData
 ): Promise<number | null> {
+	const validResult = AiPromptsDataUtils.validUpdateData(updateRequestData);
+
+	if (!validResult.valid) {
+		throw new Error(validResult.message);
+	}
+
 	const aiPromptsEntity: AiPromptsEntity | null = await AiPromptsRepository.findTopByUserIdAndId(
 		userId,
 		updateRequestData.id
@@ -387,21 +353,119 @@ async function updateAiPrompts(
 	return updatedEntity.id;
 }
 
-async function getAiResponsesTodayInference(
-	userId: number,
-	candleType: string
-): Promise<AiResponsesTodayInferenceData[]> {
-	const nowDate = CurrentDateUtils.getNowDateString();
-
-	const entities = await AiResponsesRepository.findAllByTodayInference(userId, candleType, nowDate);
-
-	if (entities.length === 0) {
-		return [];
+async function deleteAiPrompts(userId: number, aiPromptsId: number): Promise<boolean> {
+	if (!userId || !aiPromptsId) {
+		return false;
 	}
 
-	return entities.map((item) => {
-		return AiResponsesEntityUtils.toAiResponseTodayInferenceData(item);
-	});
+	return await AiPromptsRepository.deleteAiPrompts(userId, aiPromptsId);
+}
+
+// Ai Analytics Request Scheduler
+async function getAiAnalyticsRequestSchedulerList(
+	userId: number
+): Promise<AiAnalyticsRequestSchedulerData[]> {
+	const entities = await AiAnalyticsRequestSchedulerRepository.findAllByUserId(userId);
+
+	return entities.map(
+		(item: AiAnalyticsRequestSchedulerEntity): AiAnalyticsRequestSchedulerData => {
+			return AiAnalyticsRequestSchedulerEntityUtils.toAiAnalyticsRequestSchedulerData(item);
+		}
+	);
+}
+
+async function createAiAnalyticsRequestScheduler(
+	userId: number,
+	createData: AiAnalyticsRequestSchedulerCreateData
+): Promise<number> {
+	const validResult = AiAnalyticsRequestSchedulerDataUtils.validCreateData(createData);
+
+	if (!validResult.valid) {
+		throw new Error(validResult.message);
+	}
+
+	const existCount: number | undefined =
+		await AiAnalyticsRequestSchedulerRepository.countAllByUserIdAndAiModelIdAndCandleUnitAndExecuteHoursAndExecuteMinutes(
+			userId,
+			createData.aiModelId,
+			createData.candleUnit,
+			createData.executeHours,
+			createData.executeMinutes
+		);
+
+	const promptsCount: number | undefined = await AiPromptsRepository.countAllByUserIdAndId(
+		userId,
+		createData.aiPromptsId
+	);
+
+	if (!promptsCount) {
+		throw new Error(ResponseCode.notFound.message);
+	}
+
+	if (!CurrentNumberUtils.isNumber(existCount)) {
+		throw new Error(ResponseCode.alreadyExists.message);
+	}
+
+	const entity: AiAnalyticsRequestSchedulerEntity | undefined =
+		await AiAnalyticsRequestSchedulerRepository.insertByAiAnalyticsRequestSchedulerCreateData(
+			userId,
+			createData
+		);
+
+	if (!entity) {
+		throw new Error(ResponseCode.internalServerError.message);
+	}
+
+	return entity.id;
+}
+
+async function updateAiAnalyticsRequestScheduler(
+	userId: number,
+	updateData: AiAnalyticsRequestSchedulerUpdateData
+): Promise<number> {
+	const validResult = AiAnalyticsRequestSchedulerDataUtils.validUpdateData(updateData);
+
+	if (!validResult.valid) {
+		throw new Error(validResult.message);
+	}
+
+	const existCount: number | undefined =
+		await AiAnalyticsRequestSchedulerRepository.countAllByUserIdAndId(userId, updateData.id);
+
+	if (!existCount) {
+		throw new Error(ResponseCode.notFound.message);
+	}
+
+	const promptsCount: number | undefined = await AiPromptsRepository.countAllByUserIdAndId(
+		userId,
+		updateData.aiPromptsId
+	);
+
+	if (!promptsCount) {
+		throw new Error(ResponseCode.notFound.message);
+	}
+
+	const entity: AiAnalyticsRequestSchedulerEntity | undefined =
+		await AiAnalyticsRequestSchedulerRepository.updateByAiAnalyticsRequestSchedulerUpdateData(
+			userId,
+			updateData
+		);
+
+	if (!entity) {
+		throw new Error(ResponseCode.internalServerError.message);
+	}
+
+	return entity.id;
+}
+
+async function deleteAiAnalyticsRequestScheduler(userId: number, id: number): Promise<boolean> {
+	const result = await AiAnalyticsRequestSchedulerRepository.deleteByUserIdAndId(userId, id);
+
+	if (!result) {
+		throw new Error(ResponseCode.internalServerError.message);
+	}
+
+	return result;
 }
 
 /**
@@ -451,19 +515,19 @@ async function unsetDefaultYn(userId: number, aiModelId: number): Promise<void> 
  * Private Functions
  *
  * @param marketEntity
- * @param candleType
+ * @param candleUnit
  * @param candleCount
  * @param candleTimeZone
  */
 async function getAiRequestModelCase1Data(
 	marketEntity: MarketInfoEntity,
-	candleType: string,
+	candleUnit: string,
 	candleCount: number,
 	candleTimeZone: string
 ): Promise<AiRequestModelCase1Data | null> {
 	const candleDataList: CandleData[] = await CandleService.getCandleDataList(
 		marketEntity.market,
-		candleType,
+		candleUnit,
 		candleCount,
 		''
 	);
@@ -480,22 +544,26 @@ async function getAiRequestModelCase1Data(
 	let beginDate: Date | undefined = undefined;
 	let endDate: Date | undefined = undefined;
 
-	const itemList: AiRequestModelCase1DataItem[] = candleDataList.map((item) => {
-		const date =
-			CandleTypeZoneCode.UTC === candleTimeZone
-				? CurrentDateUtils.toDateTimeByDate(item.candleDateTimeUtc)
-				: CurrentDateUtils.toDateTimeByDate(item.candleDateTimeKst);
+	const itemList: AiRequestModelCase1DataItem[] = candleDataList
+		.sort((a, b) => {
+			return a.timestamp - b.timestamp;
+		})
+		.map((item) => {
+			const date =
+				UPBitCandleTimeZones.utc === candleTimeZone
+					? CurrentDateUtils.toDateByString(item.candleDateTimeUtc)
+					: CurrentDateUtils.toDateByString(item.candleDateTimeKst);
 
-		if (!beginDate || beginDate > date) {
-			beginDate = date;
-		}
+			if (!beginDate || beginDate > date) {
+				beginDate = date;
+			}
 
-		if (!endDate || endDate < date) {
-			endDate = date;
-		}
+			if (!endDate || endDate < date) {
+				endDate = date;
+			}
 
-		return AiRequestModelDataUtils.toAiRequestModelCase1DataItem(item, candleTimeZone);
-	});
+			return AiRequestModelDataUtils.toAiRequestModelCase1DataItem(item, candleTimeZone);
+		});
 
 	return AiRequestModelDataUtils.toAiRequestModelCase1Data(
 		marketEntity.market,
@@ -507,4 +575,75 @@ async function getAiRequestModelCase1Data(
 		candleTimeZone,
 		itemList
 	);
+}
+
+function getAiInferenceData(
+	aiResponsesEntity: AiResponsesEntity,
+	judgementYn: boolean
+): AiInferenceData {
+	const property: AiResponseModelProperty = AiResponseModelDataUtils.toAiResponseModelProperty(
+		aiResponsesEntity.response
+	);
+
+	const aiInferenceItemList: AiInferenceItemData[] = property.items.map(
+		(item: AiResponseModelPropertyItem): AiInferenceItemData => {
+			const momentDate = moment(item.date);
+
+			if (UPBitCandleUnitEnum.hours.key === aiResponsesEntity.candle_unit) {
+				momentDate.set('hour', parseInt(item.time.split(':')[0]));
+			}
+
+			const dateTime = momentDate.format(CurrentDateUtils.dateTimeFormat);
+
+			if (judgementYn) {
+				return {
+					dateTime: dateTime,
+					openPrice: item.openPrice,
+					highPrice: item.highPrice,
+					lowPrice: item.lowPrice,
+					closePrice: item.closePrice,
+					evaluation: item.evaluation,
+					judgementBasis: item.judgementBasis,
+					judgementBasisKr: item.judgementBasisKr
+				};
+			}
+
+			return {
+				dateTime: dateTime,
+				openPrice: item.openPrice,
+				highPrice: item.highPrice,
+				lowPrice: item.lowPrice,
+				closePrice: item.closePrice,
+				evaluation: item.evaluation,
+				judgementBasis: '',
+				judgementBasisKr: ''
+			};
+		}
+	);
+
+	const aiInference: AiInferenceData = {
+		aiResponsesCreatedAt: CurrentDateUtils.toFormatStringByDate(aiResponsesEntity.created_at),
+		market: aiResponsesEntity.market,
+		aiResponsesId: aiResponsesEntity.id,
+		aiModelId: aiResponsesEntity.ai_model_id,
+		aiPromptsId: aiResponsesEntity.ai_prompts_id,
+		aiResponseModesId: aiResponsesEntity.ai_response_models_id,
+		candleUnit: aiResponsesEntity.candle_unit,
+		candleCount: aiResponsesEntity.candle_count,
+		candleTimeZone: aiResponsesEntity.candle_time_zone,
+		candleDateTimeBegin: aiResponsesEntity.candle_date_time_begin,
+		candleDateTimeEnd: aiResponsesEntity.candle_date_time_end,
+		totalJudgement: '',
+		totalJudgementKr: '',
+		itemList: aiInferenceItemList
+	};
+
+	if (judgementYn) {
+		aiInference.totalJudgementKr = property.totalJudgementKr;
+		aiInference.totalJudgement = property.totalJudgement;
+
+		return aiInference;
+	}
+
+	return aiInference;
 }

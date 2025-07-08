@@ -2,8 +2,8 @@ import cron from 'node-cron';
 import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
 import { RedisService } from '$lib/server/service/RedisService';
 import type { HashSetData } from '$lib/server/models/RedisData';
+import { BatchService } from '$lib/server/service/BatchService';
 import { LoggingUtils } from '$lib/common/utils/LoggingUtils';
-import { TickerService } from '$lib/server/service/TickerService';
 
 const redisKey = 'node-cron-job';
 
@@ -23,6 +23,14 @@ const job = {
 			timezone: 'Asia/Seoul',
 			name: 'jobUpdateTickerList'
 		}
+	},
+	jobCreateAnalyzeTechnicalIndicator: {
+		cron: '*/10 * * * * *', // every 10 seconds
+		options: {
+			scheduled: false,
+			timezone: 'Asia/Seoul',
+			name: 'jobCreateAnalyzeTechnicalIndicator'
+		}
 	}
 };
 
@@ -31,9 +39,10 @@ const jobStatus = {
 	work: 'work'
 };
 
-export const NodeCronJob = {
+export const BatchJob = {
 	nowAll: async () => {
 		jobUpdateTickerList.now();
+		jobCreateAnalyzeTechnicalIndicator.now();
 	},
 	startAll: async () => {
 		const result = await createRedisKey();
@@ -43,10 +52,12 @@ export const NodeCronJob = {
 		}
 
 		jobUpdateTickerList.start();
+		jobCreateAnalyzeTechnicalIndicator.start();
 	},
 	stopAll: async () => {
 		await removeRedisKey();
 		jobUpdateTickerList.stop();
+		jobCreateAnalyzeTechnicalIndicator.stop();
 	}
 };
 
@@ -54,20 +65,46 @@ const jobUpdateTickerList = cron.schedule(
 	job.jobUpdateTickerList.cron,
 	async () => {
 		const jobNames = job.jobUpdateTickerList.options.name;
+
+		LoggingUtils.info(jobNames, 'Started');
 		const result = await isWorking(jobNames);
 
 		if (result) {
-			logging(`${jobNames} is working`);
+			LoggingUtils.info(jobNames, 'Is working');
 			return;
 		}
 
 		await setWorking(jobNames);
 
-		await TickerService.updateTickerListByMarketCurrency("KRW");
+		await BatchService.executeUpdateMarketCurrencyTickerToRedis();
 
 		await setStay(jobNames);
+		LoggingUtils.info(jobNames, 'Finished');
 	},
 	{ ...job.jobUpdateTickerList.options }
+);
+
+const jobCreateAnalyzeTechnicalIndicator = cron.schedule(
+	job.jobCreateAnalyzeTechnicalIndicator.cron,
+	async () => {
+		const jobNames = job.jobCreateAnalyzeTechnicalIndicator.options.name;
+		LoggingUtils.info(jobNames, 'Started');
+
+		const result = await isWorking(jobNames);
+
+		if (result) {
+			LoggingUtils.info(jobNames, 'Is working');
+			return;
+		}
+
+		await setWorking(jobNames);
+
+		await BatchService.executeCreateAnalyzeTechnicalIndicatorToRedis();
+
+		await setStay(jobNames);
+		LoggingUtils.info(jobNames, 'Finished');
+	},
+	{ ...job.jobCreateAnalyzeTechnicalIndicator.options }
 );
 
 async function createRedisKey() {

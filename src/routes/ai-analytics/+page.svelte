@@ -1,377 +1,342 @@
 <script lang="ts">
-	export const prerender = true;
 
 	import type { PageData } from './$types';
 	import {
 		Button,
-		ButtonGroup,
-		Card,
-		Dropdown,
-		DropdownItem,
-		Input,
-		Listgroup,
-		ListgroupItem,
-		Spinner,
-		TabItem,
-		Tabs
+		Li,
+		List,
+		Popover,
+		Spinner
 	} from 'flowbite-svelte';
-	import { ChevronDownOutline } from 'flowbite-svelte-icons';
 	import { onMount } from 'svelte';
 	import type { MarketInfoData } from '$lib/common/models/MarketInfoData';
-	import {
-		MarketCurrencyCode,
-		MarketCurrencyTypeUtils
-	} from '$lib/common/enums/MarketCurrencyType';
-	import { AIModelCode } from '$lib/common/enums/AIModelCode';
-	import type { AiModelData } from '$lib/common/models/AiModelData';
 	import AiPromptModalComponent from '$lib/web/components/modals/AiPromptModalComponent.svelte';
-	import { ResponseCode } from '$lib/common/enums/ResponseCode';
-	import { AiAnalyticsWebApi } from '$lib/web/api/AiAnalyticsWebApi';
-	import AiResponsesComponent from '$lib/web/components/ai-analytics/AiResponsesComponent.svelte';
 	import {
 		UPBitCandleTimeZones,
-		type UPBitCandleUnitCodeData,
-		UPBitCandleUnitCodeUtils,
 		UPBitCandleUnitEnum
 	} from '$lib/common/enums/UPBitCandleEnum';
-	import TodayAiAnalyticsComponent from '$lib/web/components/ai-analytics/TodayAiAnalyticsComponent.svelte';
+	import AiAnalyticsRequestSchedulerModalComponent
+		from '$lib/web/components/ai-analytics/AiAnalyticsRequestSchedulerModalComponent.svelte';
+	import {
+		CheckIcon,
+		TimerIcon
+	} from 'lucide-svelte';
+	import type { TickerCalculationData } from '$lib/common/models/TickerData';
+	import { tickerCalculationStore } from '$lib/stores/MarketStore';
+	import { CurrentNumberUtils } from '$lib/common/utils/CurrentNumberUtils';
+	import AiAnalyticsRequestConfigModalComponent
+		from '$lib/web/components/ai-analytics/AiAnalyticsRequestConfigModalComponent.svelte';
+	import type { AiAnalyticsRequestFormData } from '$lib/common/models/AiAnalyticsRequestData';
+	import ToastAlertComponent from '$lib/web/components/application/ToastAlertComponent.svelte';
+	import { AiAnalyticsWebApi } from '$lib/web/request/AiAnalyticsWebApi';
+	import {
+		type AiResponsesCreateRequestData,
+		AiResponsesDataUtils
+	} from '$lib/common/models/AiResponsesData';
+	import { ResponseCode } from '$lib/common/enums/ResponseCode';
+	import type { AiPromptsData } from '$lib/common/models/AiPromptsData';
+	import AiAnalyticsAiInferenceComponent
+		from '$lib/web/components/ai-analytics/AiAnalyticsAiInferenceComponent.svelte';
+	import AiAnalyticsAiHistoryComponent from '$lib/web/components/ai-analytics/AiAnalyticsAiHistoryComponent.svelte';
 
 	let { data }: {
 		data: PageData
 	} = $props();
 
-	let _marketInfoRecord: Record<string, MarketInfoData[]> = $state({});
-	let _currentMarketCurrencyType: string = $state(MarketCurrencyCode.KRW.code);
-	let _marketInfoList: MarketInfoData[] = $derived(filterMarketList(_currentMarketCurrencyType));
-	let _aiModelRecord: Record<string, AiModelData[]> = $state({});
-	let _promptModalOpenYn: boolean = $state(false);
-	let _currentMarketInfoData: MarketInfoData = $state(data.marketInfoDataList[0]);
-	let _aiModel: AiModelData = $state({} as AiModelData);
-	let _ai: {
-		code: string,
-		name: string
-	} = $state(AIModelCode.GEMINI);
-	let _aiModelDropdownOpenYn: boolean = $state(false);
-	let _aiDropdownOpenYn: boolean = $state(false);
-	let _aiPromptsId: number = $state(0);
-	let _availableAnalyticsRequestYn = $derived(_aiPromptsId > 0 && _aiModel.id > 0 && _currentMarketInfoData?.market);
+	let _promptConfigModalOpenYn: boolean = $state(false);
+	let _marketInfo: MarketInfoData = $state(data.marketInfoData);
+	let _aiPromptsDataList: AiPromptsData[] = $state(data.aiPromptsDataList);
 	let _aiAnalyticsRequestLoadingYn = $state(false);
-	let _candleUnitCode: UPBitCandleUnitCodeData = $state(UPBitCandleUnitEnum.days);
-	let _candleUnitDropdownOpenYn: boolean = $state(false);
-	let _candleCount: number = $state(200);
-	let _candleTimeZoneDropdownOpenYn: boolean = $state(false);
+	let _candleUnit: string = $state(UPBitCandleUnitEnum.days.key);
 	let _candleTimeZone: string = $state(UPBitCandleTimeZones.utc);
+	let _tickerCalculationData: TickerCalculationData | undefined = $state(undefined);
+	let _aiAnalyticsHistoryOpenYn: boolean = $state(false);
 
-	let _searchMarket: string = $state('');
-
-	function filterMarketList(marketCurrencyType: string) {
-		if (!marketCurrencyType || !(Object.keys(_marketInfoRecord).length > 0)) {
-			return [];
-		}
-
-		return _marketInfoRecord[marketCurrencyType].filter((item) => {
-			if (_searchMarket) {
-				return item.koreanName.includes(_searchMarket) || item.englishName.includes(_searchMarket) ||
-					item.market.includes(_searchMarket);
-			} else {
-				return true;
-			}
-		});
-	}
+	let _alertMessage: string = $state('');
+	let _requestConfigModalOpenYn: boolean = $state(false);
+	let _aiAnalyticsRequestFormData: AiAnalyticsRequestFormData | undefined = $state.raw(undefined);
+	let _schedulerModalOpenYn: boolean = $state(false);
+	let _reloadYn: boolean = $state(false);
 
 	onMount(async () => {
 		await mount();
 	});
 
-	async function mount() {
-
-		_marketInfoRecord = data.marketInfoDataList.reduce((acc, item) => {
-			const key = MarketCurrencyTypeUtils.getMarketCurrencyType(item.market);
-
-			if (!key) {
-				return acc;
-			}
-
-			if (!acc[key.code]) {
-				acc[key.code] = [];
-			}
-
-			acc[key.code].push(item);
-
-			return acc;
-		}, {} as Record<string, MarketInfoData[]>);
-
-		_aiModelRecord = data.aiModelDataList.reduce((acc, item) => {
-			if (!acc[item.aiCode]) {
-				acc[item.aiCode] = [];
-			}
-
-			acc[item.aiCode].push(item);
-
-			return acc;
-		}, {} as Record<string, AiModelData[]>);
-
-		_aiModel = _aiModelRecord[_ai.code][1];
-	}
-
-	function clickOpenPromptsModal() {
-		_promptModalOpenYn = true;
-	}
-
-	async function clickMarketItem(item: MarketInfoData) {
-		if (_currentMarketInfoData.market === item.market) {
-			return;
+	$effect(() => {
+		if ($tickerCalculationStore) {
+			_tickerCalculationData = JSON.parse($tickerCalculationStore);
 		}
+	});
 
-		_currentMarketInfoData = item;
-	}
-
-	function clickAiDropdown(ai: {
-		code: string,
-		name: string
-	}) {
-		_aiDropdownOpenYn = !_aiDropdownOpenYn;
-
-		if (_ai.code === ai.code) {
-			return;
-		}
-
-		_ai = ai;
-		_aiModel = _aiModelRecord[_ai.code][1];
-		_candleCount = 200;
-		_candleUnitCode = UPBitCandleUnitEnum.days;
-		_candleTimeZone = UPBitCandleTimeZones.utc;
-		_aiPromptsId = 0;
-	}
-
-	function clickAiModelDrop(aiModel: AiModelData) {
-		_aiModelDropdownOpenYn = !_aiModelDropdownOpenYn;
-
-		if (_aiModel.modelCode === aiModel.modelCode) {
-			return;
-		}
-
-		_aiModel = aiModel;
-		_candleCount = 200;
-		_candleUnitCode = UPBitCandleUnitEnum.days;
-		_candleTimeZone = UPBitCandleTimeZones.utc;
-		_aiPromptsId = 0;
-	}
+	async function mount() {}
 
 	async function requestAiAnalytics() {
+		if (!_aiAnalyticsRequestFormData) {
+			_alertMessage = 'No Request Config';
+			return;
+		}
+
 		_aiAnalyticsRequestLoadingYn = true;
 
-		const responseObject = await AiAnalyticsWebApi.requestAiAnalysis(
-			_currentMarketInfoData.market,
-			_aiModel.id,
-			_aiPromptsId,
-			_candleUnitCode.key,
-			_candleCount,
-			_candleTimeZone
-		);
+		const createRequestData = {
+			market: _marketInfo.market,
+			aiCode: _aiAnalyticsRequestFormData.ai,
+			aiModelId: Number(_aiAnalyticsRequestFormData.aiModelId),
+			aiPromptsId: Number(_aiAnalyticsRequestFormData.aiPromptsId),
+			candleUnit: _aiAnalyticsRequestFormData.candleUnit,
+			candleCount: _aiAnalyticsRequestFormData.candleCount,
+			candleTimeZone: _aiAnalyticsRequestFormData.candleTimeZone
+		} as AiResponsesCreateRequestData;
 
-		await new Promise((resolve) => setTimeout(resolve, 2000));
+		const validResult = AiResponsesDataUtils.validCreateData(createRequestData);
+
+		if (!validResult.valid) {
+			_alertMessage = validResult.message;
+			_aiAnalyticsRequestLoadingYn = false;
+			return;
+		}
+
+		const responseObject = await AiAnalyticsWebApi.createAiResponses(createRequestData);
+
+		await new Promise((resolve) => setTimeout(resolve, 500));
 
 		_aiAnalyticsRequestLoadingYn = false;
 
 		if (ResponseCode.success.code !== responseObject.code) {
-			alert(responseObject.message);
+			_alertMessage = responseObject.message;
 			return;
 		}
 
 		if (!responseObject.data) {
-			alert('Ai Analysis Request Failed');
+			_alertMessage = 'Ai Analysis Request Failed';
 			return;
 		}
+
+		_reloadYn = true;
 	}
 
-	function clickCandleUnitDropItem(item: UPBitCandleUnitCodeData) {
-		_candleUnitCode = item;
-		_candleUnitDropdownOpenYn = false;
+	function aiPromptsConfigModalCallback() {
+		_aiAnalyticsRequestFormData = undefined;
 	}
 
-	function clickCandleTimeZoneDropItem(item: string) {
-		_candleTimeZone = item;
-		_candleTimeZoneDropdownOpenYn = false;
+	function aiResponsesDeleteCallback() {
+		_reloadYn = true;
+	}
+
+	function onclickOpenPromptsModal() {
+		_promptConfigModalOpenYn = !_promptConfigModalOpenYn;
+	}
+
+	function onclickAiAnalyticsRequestConfigModal() {
+		_requestConfigModalOpenYn = !_requestConfigModalOpenYn;
+	}
+
+	function onclickAiAnalyticsRequestSchedulerModal() {
+		_schedulerModalOpenYn = !_schedulerModalOpenYn;
+	}
+
+	function onclickAiAnalyticsHistory() {
+		_aiAnalyticsHistoryOpenYn = !_aiAnalyticsHistoryOpenYn;
 	}
 </script>
 
 
-<main class="flex flex-col w-full h-full p-4 gap-4 overflow-hidden">
-	<!--	Ai Config-->
-	<Card class="flex flex-row w-full"
-				padding="none"
-				size="none">
-
-		<div class="flex flex-row w-full items-center justify-between">
-			<div class="">
-				<Button color="light"
-								id="ai"
-								class="rounded-lg text-sm p-2.5 me-1 focus:ring-0">
-					{_ai.name}
-					<ChevronDownOutline />
-				</Button>
-				<Dropdown placement="bottom"
-									triggeredBy="#ai"
-									bind:open={_aiDropdownOpenYn}>
-					{#each Object.values(AIModelCode) as value}
-						<DropdownItem onclick={() => clickAiDropdown(value)}>
-							{value.name}
-						</DropdownItem>
-					{/each}
-				</Dropdown>
-
-
-				<Button color="light"
-								id="ai-model"
-								class="rounded-lg text-sm p-2.5 me-1 focus:ring-0">
-					{_aiModel.modelName}
-					<ChevronDownOutline />
-				</Button>
-				<Dropdown placement="bottom"
-									triggeredBy="#ai-model"
-									bind:open={_aiModelDropdownOpenYn}>
-					{#each _aiModelRecord[_ai.code] as item}
-						<DropdownItem onclick={() => clickAiModelDrop(item)}>
-							{item.modelName}
-						</DropdownItem>
-					{/each}
-				</Dropdown>
-
-				<ButtonGroup>
-					<Input type="number"
-								 defaultClass="inline focus:ring-0"
-								 min="60"
-								 max="200"
-								 bind:value={_candleCount}
-								 placeholder="데이터 크기" />
-					<Button color="light"
-									id="ai_candle_unit"
-									class="focus:ring-0">
-						{_candleUnitCode.name}
-						<ChevronDownOutline class="w-5 h-5 ms-2" />
-					</Button>
-					<Dropdown placement="bottom"
-										bind:open={_candleUnitDropdownOpenYn}
-										triggeredBy="#ai_candle_unit">
-						{#each UPBitCandleUnitCodeUtils.getAiRequestUnit() as item}
-							<DropdownItem onclick={async () => clickCandleUnitDropItem(item)}>
-								{item.name}
-							</DropdownItem>
-						{/each}
-					</Dropdown>
-				</ButtonGroup>
-
-				<Button color="light"
-								id="ai_candle_time_zone"
-								class="focus:ring-0">
-					{_candleTimeZone}
-					<ChevronDownOutline class="w-5 h-5 ms-1" />
-				</Button>
-				<Dropdown placement="bottom"
-									bind:open={_candleTimeZoneDropdownOpenYn}
-									triggeredBy="#ai_candle_time_zone">
-					<DropdownItem onclick={async () => clickCandleTimeZoneDropItem(UPBitCandleTimeZones.utc)}>
-						{UPBitCandleTimeZones.utc}
-					</DropdownItem>
-					<DropdownItem onclick={async () => clickCandleTimeZoneDropItem(UPBitCandleTimeZones.kst)}>
-						{UPBitCandleTimeZones.kst}
-					</DropdownItem>
-				</Dropdown>
-
-				<Button color={_aiPromptsId ? 'green' : 'light'}
-								class="rounded-lg text-sm p-2.5 me-1 focus:ring-0"
-								onclick={clickOpenPromptsModal}>
-					Chose Prompt
-				</Button>
+<header class="relative grid grid-cols-2 gap-2 w-full h-20 px-4 py-2 items-center border-b-2 overflow-y-hidden overflow-x-auto">
+	<div class="grid grid-flow-col gap-2 w-full justify-end">
+		{#if _tickerCalculationData}
+			{@const priceColor = _tickerCalculationData.diffPrice > 0 ?
+				'text-red-500' :
+				_tickerCalculationData.diffPrice < 0 ? 'text-blue-500' : ''}
+			<div class="min-w-0 text-end">
+				<p class="text-[24px] font-bold">
+					{_tickerCalculationData.koreanName}
+				</p>
+				<p class="text-[12px]">
+					{_tickerCalculationData.market}
+				</p>
 			</div>
-			<div class="">
-				<Button color={_availableAnalyticsRequestYn ? 'green' : 'light'}
-								class="rounded-lg text-sm p-2.5 me-1 focus:ring-0"
-								disabled={!_availableAnalyticsRequestYn || _aiAnalyticsRequestLoadingYn}
-								onclick={requestAiAnalytics}>
+			<div class="min-w-0 text-start">
+				<p class="text-[22px] text-nowrap font-medium {priceColor}">
+					{CurrentNumberUtils.numberWithCommas(
+						_tickerCalculationData.tradePrice,
+						_tickerCalculationData.decimalDepth
+					)}
+					<span class="text-[12px]">
+						KRW
+					</span>
+				</p>
+				<p class="text-[11px] priceColor {priceColor}">
+					{_tickerCalculationData.diffRate.toFixed(2)}%
+					{CurrentNumberUtils.numberWithCommas(
+						_tickerCalculationData.diffPrice,
+						_tickerCalculationData.decimalDepth
+					)}
+				</p>
+			</div>
+		{/if}
+	</div>
+	<div class="grid grid-flow-col gap-2 items-center justify-around w-full">
+		<div class="">
+			<Button color="primary"
+							class="p-2 focus:ring-0"
+							onclick={onclickOpenPromptsModal}>
+				<p class="text-[12px] leading-none">
+					Prompts Config
+				</p>
+			</Button>
+
+			<Button color="primary"
+							class="p-2 focus:ring-0"
+							onclick={onclickAiAnalyticsRequestConfigModal}>
+				<p class="text-[12px] leading-none">
+					Request Config
+				</p>
+			</Button>
+
+			<Button color='green'
+							id="_aiAnalyticsRequestButton"
+							class="p-2 focus:ring-0"
+							disabled={!_aiAnalyticsRequestFormData}
+							onclick={requestAiAnalytics}>
+				<p class="text-[12px] leading-none">
 					Gen
-					{#if _aiAnalyticsRequestLoadingYn}
-						<Spinner class="w-5 h-5 ml-2"
-										 size="4" />
-					{/if}
-				</Button>
-			</div>
-		</div>
-	</Card>
-
-	<TodayAiAnalyticsComponent bind:candleType={_candleUnitCode.key}/>
-
-	<!--	Trading Chart-->
-	<div class="flex ">
-		<div class="flex flex-col w-full overflow-x-hidden">
-			<!--			Market Info-->
-			<Card class="flex flex-row w-full items-center justify-between"
-						size="none">
-				<div class="">
-					{_currentMarketInfoData.koreanName}
-					{_currentMarketInfoData.market}
-				</div>
-			</Card>
-
-			<div class="flex w-full">
-				{#if _currentMarketInfoData}
-					<AiResponsesComponent marketInfo={_currentMarketInfoData} />
+				</p>
+				{#if _aiAnalyticsRequestLoadingYn}
+					<Spinner class="w-4 h-4 ml-2" />
 				{/if}
-			</div>
-
-
+			</Button>
 		</div>
+		<div class="">
+			<Button color="primary"
+							class="rounded-lg p-2 focus:ring-0"
+							onclick={onclickAiAnalyticsRequestSchedulerModal}>
+				<p class="text-[12px] leading-none">
+					Scheduler
+				</p>
+				<TimerIcon class="ml-2 w-3 h-3" />
+			</Button>
+			<Button
+				type="button"
+				color="alternative"
+				class="rounded-lg p-2 focus:ring-0"
+				onclick={onclickAiAnalyticsHistory}>
+				<p class="text-[12px] leading-none">
+					History
+				</p>
+			</Button>
+		</div>
+	</div>
+</header>
 
-		<!--		Market List-->
-		<Card class="flex w-[400px] min-w-[400px] h-screen overflow-y-auto"
-					padding="none"
-					size="none">
-			<Tabs class="sticky top-0 z-10 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-lg border-b border-gray-200 dark:border-gray-700  shadow-lg "
-						contentClass="p-2 bg-gray-50 rounded-lg dark:bg-gray-800"
-						tabStyle="underline">
-				<div class="flex w-full">
-					<Input id="search-navbar"
-								 class="ps-10"
-								 placeholder="Search..."
-								 bind:value={_searchMarket} />
-				</div>
-				{#each MarketCurrencyTypeUtils.getMainCurrencyTypeList() as currencyType}
-					<TabItem title={currencyType.name}
-									 onclick={() => _currentMarketCurrencyType = currencyType.code}
-									 open={_currentMarketCurrencyType === currencyType.code}>
-						<Listgroup class="border-0 dark:!bg-transparent"
-											 active={true}>
-							{#each _marketInfoList as item}
-								{@const color = _currentMarketInfoData.market === item.market ? 'bg-gray-100 dark:bg-gray-800' : ''}
-								<ListgroupItem
-									on:click={() => clickMarketItem(item)}
-									itemDefaultClass="py-2 px-4 w-full text-sm font-medium list-none first:rounded-t-lg last:rounded-b-lg {color}"
-									focusClass=""
-									hoverClass="hover:bg-gray-100 dark:hover:bg-gray-700">
-									<div class="grid grid-cols-5 w-full items-center gap-2">
-										<div class="col-span-2 min-w-0">
-											<p class="text-[12px] font-medium text-gray-900 dark:text-white">
-												{item.koreanName}
-											</p>
-											<p class="text-[11px] text-gray-500 dark:text-gray-400">
-												{item.market}
-											</p>
-										</div>
-									</div>
-								</ListgroupItem>
-							{/each}
-						</Listgroup>
-					</TabItem>
-				{/each}
-			</Tabs>
-		</Card>
+<main class="relative grid auto-rows-min w-full h-full p-4 gap-4 justify-center overflow-y-auto">
+	<!--	Ai Analytics History -->
+	<div class="flex flex-row w-full">
+		{#if _aiAnalyticsHistoryOpenYn}
+			<AiAnalyticsAiHistoryComponent
+				marketInfo={_marketInfo}
+				aiModelList={data.aiModelDataList}
+				{aiResponsesDeleteCallback}/>
+		{/if}
+	</div>
+
+	<!--	Ai Analytics Inference -->
+	<div class=" flex flex-row w-full gap-4">
+		<AiAnalyticsAiInferenceComponent
+			reloadYn={_reloadYn}
+			bind:marketInfo={_marketInfo}
+			marketInfoList={data.marketInfoDataList}
+			candleUnit={_candleUnit}
+			candleTimeZone={_candleTimeZone} />
 	</div>
 </main>
 
 
-{#if _aiModel?.id}
-	<AiPromptModalComponent bind:modalOpenYn={_promptModalOpenYn}
-													bind:aiPromptsId={_aiPromptsId}
-													bind:aiModelId={_aiModel.id} />
-{/if}
+<Popover
+	triggeredBy="#_aiAnalyticsRequestButton"
+	class="z-10 w-64 text-xs font-light"
+	title="Current Ai Analytics Request Config"
+	arrow={false}
+	trigger="hover">
+	<div class="flex flex-col gap-2">
+		{#if _aiAnalyticsRequestFormData}
+			<List tag="ul"
+						class="mb-2"
+						list="none">
+				<Li icon
+						class="gap-2">
+					<CheckIcon class="w-4 h-4 text-green-500" />
+					AI :
+					<p class="font-bold">
+						{_aiAnalyticsRequestFormData.ai}
+					</p>
+				</Li>
+				<Li icon
+						class="gap-2">
+					<CheckIcon class="w-4 h-4 text-green-500" />
+					AI Model ID :
+					<p class="font-bold">
+						{_aiAnalyticsRequestFormData.aiModelName}
+					</p>
+				</Li>
+				<Li icon
+						class="gap-2">
+					<CheckIcon class="w-4 h-4 text-green-500" />
+					AI Prompts ID:
+					<p class="font-bold">
+						{_aiAnalyticsRequestFormData.aiPromptsTitle}
+					</p>
+				</Li>
+				<Li icon
+						class="gap-2">
+					<CheckIcon class="w-4 h-4 text-green-500" />
+					Candle Unit:
+					<p class="font-bold">
+						{_aiAnalyticsRequestFormData.candleUnit}
+					</p>
+				</Li>
+				<Li icon
+						class="gap-2">
+					<CheckIcon class="w-4 h-4 text-green-500" />
+					Candle Count:
+					<p class="font-bold">
+						{_aiAnalyticsRequestFormData.candleCount}
+					</p>
+				</Li>
+				<Li icon
+						class="gap-2">
+					<CheckIcon class="w-4 h-4 text-green-500" />
+					Candle TimeZone:
+					<p class="font-bold">
+						{_aiAnalyticsRequestFormData.candleTimeZone}
+					</p>
+				</Li>
+			</List>
+		{:else }
+			<p class="items-center text-center">
+				No Request Config
+			</p>
+		{/if}
+	</div>
+</Popover>
+
+
+<AiPromptModalComponent
+	bind:openModalYn={_promptConfigModalOpenYn}
+	aiModelList={data.aiModelDataList}
+	bind:aiPromptsList={_aiPromptsDataList}
+	{aiPromptsConfigModalCallback} />
+
+<AiAnalyticsRequestConfigModalComponent
+	bind:openModalYn={_requestConfigModalOpenYn}
+	bind:initFormData={_aiAnalyticsRequestFormData}
+	aiModelList={data.aiModelDataList}
+	aiPromptsList={_aiPromptsDataList} />
+
+<AiAnalyticsRequestSchedulerModalComponent
+	bind:openModal={_schedulerModalOpenYn}
+	aiModelList={data.aiModelDataList}
+	marketInfoList={data.marketInfoDataList}
+	aiPromptsList={_aiPromptsDataList} />
+
+<ToastAlertComponent
+	alertMessage={_alertMessage} />

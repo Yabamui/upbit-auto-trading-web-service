@@ -1,12 +1,15 @@
-import { error } from '@sveltejs/kit';
 import { ResponseCode } from '$lib/common/enums/ResponseCode';
+import type { MarketInfoData } from '$lib/common/models/MarketInfoData';
 import { MarketInfoService } from '$lib/server/service/MarketInfoService';
+import { error } from '@sveltejs/kit';
 
-export const load = async ({ url }) => {
-	console.log('trade server load');
-	const code = url.searchParams.get('code');
+export const prerender = false; // Disable prerendering since this page depends on URL search parameters
 
-	if (!code) {
+export const load = async ({ url, cookies }) => {
+	const market: string = url.searchParams.get('code') || '';
+	const userId: string = cookies.get('user_id') || '';
+
+	if (!market) {
 		throw error(ResponseCode.wrongParameter.status, {
 			errorId: '',
 			code: ResponseCode.wrongParameter.code,
@@ -14,12 +17,23 @@ export const load = async ({ url }) => {
 		});
 	}
 
-	const marketInfoList = await MarketInfoService.getAllMarketInfoList();
+	const marketInfoDataList: MarketInfoData[] = await MarketInfoService.getAllMarketInfoList();
 
-	const marketInfo = marketInfoList.find((item) => item.market === code);
+	const marketInfoData: MarketInfoData | undefined = marketInfoDataList.find(
+		(item) => item.market === market
+	);
+
+	if (!marketInfoData) {
+		throw error(ResponseCode.notFound.status, {
+			errorId: '',
+			code: ResponseCode.notFound.code,
+			message: ResponseCode.notFound.message
+		});
+	}
 
 	return {
-		marketInfoList: marketInfoList,
-		marketInfo: marketInfo
+		loginYn: !!userId,
+		marketInfoList: marketInfoDataList,
+		marketInfo: marketInfoData
 	};
 };

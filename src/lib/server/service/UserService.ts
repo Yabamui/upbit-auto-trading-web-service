@@ -10,9 +10,7 @@ export const UserService = {
 };
 
 async function checkUserExist(email: string): Promise<boolean> {
-	const existYn = await UserInfoRepository.existByEmail(email);
-
-	return existYn;
+	return await UserInfoRepository.existByEmail(email);
 }
 
 async function registerUser(

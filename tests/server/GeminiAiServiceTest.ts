@@ -12,7 +12,6 @@ import type { MarketInfoEntity } from '$lib/server/entities/MarketInfoEntity';
 import type { CandleData } from '$lib/common/models/CandleData';
 import { CandleService } from '$lib/server/service/CandleService';
 import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
-import { CandleTypeZoneCode } from '$lib/common/enums/CandleTypeZoneCode';
 
 test(
 	'gemini content generation test',
@@ -127,7 +126,7 @@ test(
 			console.error('### requestModelData is null');
 			return;
 		}
-		
+
 		const systemInstruction = {
 			role: 'system',
 			parts: [
@@ -167,7 +166,7 @@ test(
 					role: 'user',
 					parts: [{ text: 'Input Data : \n' + JSON.stringify(requestModelData) }]
 				}
-			],
+			]
 		});
 
 		console.log(result);
@@ -179,7 +178,7 @@ test(
 
 async function getAiRequestModelCase1Data() {
 	const market = 'KRW-ETH';
-	const candleType = UPBitCandleUnitEnum.days.key;
+	const candleUnit = UPBitCandleUnitEnum.days.key;
 	const candleCount = 200;
 	const candleTimeZone = UPBitCandleTimeZones.utc;
 
@@ -194,7 +193,7 @@ async function getAiRequestModelCase1Data() {
 
 	const candleDataList: CandleData[] = await CandleService.getCandleDataList(
 		marketEntity.market,
-		candleType,
+		candleUnit,
 		candleCount,
 		''
 	);
@@ -213,9 +212,9 @@ async function getAiRequestModelCase1Data() {
 
 	const itemList: AiRequestModelCase1DataItem[] = candleDataList.map((item) => {
 		const date =
-			CandleTypeZoneCode.UTC === candleTimeZone
-				? CurrentDateUtils.toDateTimeByDate(item.candleDateTimeUtc)
-				: CurrentDateUtils.toDateTimeByDate(item.candleDateTimeKst);
+			UPBitCandleTimeZones.utc === candleTimeZone
+				? CurrentDateUtils.toDateByString(item.candleDateTimeUtc)
+				: CurrentDateUtils.toDateByString(item.candleDateTimeKst);
 
 		if (!beginDate || beginDate > date) {
 			beginDate = date;

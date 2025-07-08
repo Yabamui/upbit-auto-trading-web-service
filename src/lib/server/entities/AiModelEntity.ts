@@ -22,9 +22,9 @@ export const AiModelEntityUtils = {
 			modelCode: entity.model_code,
 			modelName: entity.model_name,
 			modelDescription: entity.model_description,
-			createdAt: CurrentDateUtils.toFormatStringByDate(entity.created_at),
-			updatedAt: CurrentDateUtils.toFormatStringByDate(entity.updated_at),
-			deletedAt: CurrentDateUtils.toFormatStringByDate(entity.deleted_at)
+			createdAt: CurrentDateUtils.toKSTFormatStringByDate(entity.created_at),
+			updatedAt: CurrentDateUtils.toKSTFormatStringByDate(entity.updated_at),
+			deletedAt: CurrentDateUtils.toKSTFormatStringByDate(entity.deleted_at)
 		};
 	}
 };

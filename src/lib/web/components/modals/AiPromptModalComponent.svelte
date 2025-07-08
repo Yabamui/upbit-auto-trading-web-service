@@ -9,84 +9,80 @@
 		Spinner,
 		Textarea
 	} from 'flowbite-svelte';
-	import { AiAnalyticsWebApi } from '$lib/web/api/AiAnalyticsWebApi';
+	import { AiAnalyticsWebApi } from '$lib/web/request/AiAnalyticsWebApi';
 	import { ResponseCode } from '$lib/common/enums/ResponseCode';
-	import type {
-		AiPromptsCreateRequestData,
-		AiPromptsData,
-		AiPromptsUpdateRequestData
+	import {
+		type AiPromptsCreateRequestData,
+		type AiPromptsData,
+		AiPromptsDataUtils,
+		type AiPromptsUpdateRequestData
 	} from '$lib/common/models/AiPromptsData';
 	import type { AiResponseModelsData } from '$lib/common/models/AiResponseModelsData';
 	import { onDestroy } from 'svelte';
 	import type { ResponseObject } from '$lib/common/models/ResponseData';
+	import type { AiModelData } from '$lib/common/models/AiModelData';
+	import { AIModelCode } from '$lib/common/enums/AIModelCode';
+	import { CurrentThreadUtils } from '$lib/common/utils/CurrentThreadUtils';
 
-	let { modalOpenYn = $bindable(), aiPromptsId = $bindable(), aiModelId = $bindable() } = $props();
+	interface AiPromptsConfigFormData {
+		ai: string;
+		aiModelId: string;
+		aiPromptsId: string;
+		title: string;
+		systemPromptsText: string;
+		userPromptsText: string;
+		defaultYn: boolean;
+		aiResponseModelsId: string;
+	}
 
-	let _title: string = $state('');
-	let _systemPromptsText: string = $state('');
-	let _userPromptsText: string = $state('');
+	let {
+		openModalYn = $bindable(),
+		aiModelList,
+		aiPromptsList = $bindable(),
+		aiPromptsConfigModalCallback
+	}: {
+		openModalYn: boolean;
+		aiModelList: AiModelData[];
+		aiPromptsList: AiPromptsData[];
+		aiPromptsConfigModalCallback: () => void;
+	} = $props();
+
+	let _processMessage: {
+		message: string;
+		color: string
+	} | undefined = $state(undefined);
+	let _formData: AiPromptsConfigFormData | undefined = $state(undefined);
+	let _createPromptsLoadingYn: boolean = $state(false);
 	let _updatePromptsLoadingYn: boolean = $state(false);
-	let _idAndAiPromptsRecord: Record<number, AiPromptsData> = $state.raw({});
-	let _currentAiPromptsId: string = $state('');
-	let _defaultYn: boolean = $state(false);
-	let _idAndAiResponseModelsRecord: Record<number, AiResponseModelsData> = $state.raw({});
-	let _aiResponseModelsId: string = $state('');
-
-	$effect(() => {
-		if (modalOpenYn) {
-			getData(aiModelId);
-		}
-	});
+	let _deletePromptsLoadingYn: boolean = $state(false);
+	let _idAndAiResponseModelsRecord: Record<string, AiResponseModelsData> = $state.raw({});
 
 	onDestroy(() => {
-		_title = '';
-		_systemPromptsText = '';
-		_userPromptsText = '';
-		_idAndAiPromptsRecord = {};
-		_currentAiPromptsId = '';
-		_defaultYn = false;
+		_formData = undefined;
 		_idAndAiResponseModelsRecord = {};
-		_aiResponseModelsId = '';
 	});
 
-	async function clearFormData() {
-		_title = '';
-		_systemPromptsText = '';
-		_userPromptsText = '';
-		_currentAiPromptsId = '';
-		aiPromptsId = 0;
-		_defaultYn = false;
-		_aiResponseModelsId = '';
+	$effect(() => {
+		if (openModalYn) {
+			setDefaultFormData();
+		}
+	});
+
+	function closeModal() {
+		openModalYn = false;
 	}
 
-	async function getData(aiModelId: number) {
-		console.log(aiModelId);
-		await getAiPromptsList(aiModelId);
-		await getAiResponseModelsList(aiModelId);
-
-		if (aiPromptsId) {
-			await changePrompts(aiPromptsId);
-		}
-	}
-
-	async function getAiPromptsList(aiModelId: number) {
-
-		const responseObject = await AiAnalyticsWebApi.getAiPromptsList(aiModelId);
-
-		if (ResponseCode.success.code !== responseObject.code) {
-			alert(responseObject.message);
-			return;
-		}
-
-		const aiPromptsList = responseObject.data as AiPromptsData[];
-
-		_idAndAiPromptsRecord = aiPromptsList.reduce((acc, item) => {
-			if (!acc[item.id]) {
-				acc[item.id] = item;
-			}
-
-			return acc;
-		}, {} as Record<number, AiPromptsData>);
+	async function setDefaultFormData() {
+		_formData = {
+			ai: AIModelCode.GEMINI.code,
+			aiModelId: '',
+			aiPromptsId: '',
+			title: '',
+			systemPromptsText: '',
+			userPromptsText: '',
+			defaultYn: false,
+			aiResponseModelsId: ''
+		};
 	}
 
 	async function getAiResponseModelsList(aiModelId: number) {
@@ -108,237 +104,486 @@
 		}, {} as Record<number, AiResponseModelsData>);
 	}
 
-	async function changePrompts(aiPromptsId: number) {
-		if (!aiPromptsId) {
-			await clearFormData();
-			return;
-		}
-
-		const aiPromptsData = _idAndAiPromptsRecord[aiPromptsId];
-		_systemPromptsText = aiPromptsData.systemPromptsList.join('\n');
-		_userPromptsText = aiPromptsData.userPromptsList.join('\n');
-		_defaultYn = aiPromptsData.defaultYn;
-		_aiResponseModelsId = aiPromptsData.aiResponseModelsId?.toString() || '0';
-	}
-
 	async function createPrompts() {
 
-		if (!aiModelId) {
-			alert('Please select the AI Model.');
+		if (!_formData) {
+			_processMessage = {
+				message: 'No Request Config',
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
 			return;
 		}
 
-		if (!_title) {
-			alert('Please enter the title.');
-			return;
-		}
-
-		if (!_userPromptsText) {
-			alert('Please enter the prompt text.');
-			return;
-		}
-
-		if (!_aiResponseModelsId) {
-			alert('Please select the response model.');
-			return;
-		}
-
-		_updatePromptsLoadingYn = true;
-
-		const aiPromptsCreateRequestData: AiPromptsCreateRequestData = {
-			aiModelId: aiModelId,
-			title: _title,
-			systemPromptsList: _systemPromptsText.split('\n'),
-			userPromptsList: _userPromptsText.split('\n'),
-			defaultYn: _defaultYn,
-			aiResponseModelsId: parseInt(_aiResponseModelsId)
+		_processMessage = {
+			message: 'Prompts Creating...',
+			color: 'text-blue-500'
 		};
+		_createPromptsLoadingYn = true;
 
-		_updatePromptsLoadingYn = false;
+		const createData: AiPromptsCreateRequestData = {
+			aiModelId: Number(_formData.aiModelId),
+			title: _formData.title,
+			systemPromptsList: _formData.systemPromptsText.split('\n'),
+			userPromptsList: _formData.userPromptsText.split('\n'),
+			defaultYn: _formData.defaultYn,
+			aiResponseModelsId: parseInt(_formData.aiResponseModelsId)
+		} as AiPromptsCreateRequestData;
+
+		const validResult = AiPromptsDataUtils.validCreateData(createData);
+
+		if (!validResult.valid) {
+			_processMessage = {
+				message: validResult.message,
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
+			_createPromptsLoadingYn = false;
+			return;
+		}
 
 		const responseObject: ResponseObject<number | null> =
-			await AiAnalyticsWebApi.createAiPrompts(aiPromptsCreateRequestData);
+			await AiAnalyticsWebApi.createAiPrompts(createData);
 
 		if (ResponseCode.success.code !== responseObject.code || !responseObject.data) {
-			alert(`Failed to create the prompt. ${ responseObject.message }`);
-			_updatePromptsLoadingYn = false;
+			_processMessage = {
+				message: responseObject.message,
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
+			_createPromptsLoadingYn = false;
 			return;
 		}
+
+		if (!responseObject.data) {
+			_processMessage = {
+				message: 'Failed to create the prompt',
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
+			_createPromptsLoadingYn = false;
+			return;
+		}
+
+		_processMessage = {
+			message: 'Prompts Create Success',
+			color: 'text-green-500'
+		};
 
 		const id = responseObject.data as number;
 
-		await getData(aiModelId);
+		await CurrentThreadUtils.sleep(1000);
 
-		setTimeout(() => {
-			_updatePromptsLoadingYn = false;
-			_currentAiPromptsId = id.toString();
-			changePrompts(id);
-		}, 1000);
+		_processMessage = {
+			message: 'Prompts Data Refreshing...',
+			color: 'text-green-500'
+		};
+
+		await updateAiPromptsList();
+
+		_formData.aiPromptsId = id.toString();
+		_processMessage = undefined;
+		_createPromptsLoadingYn = false;
+
+		aiPromptsConfigModalCallback();
 	}
 
 	async function updatePrompts() {
 
-		if (!_currentAiPromptsId) {
-			alert('Please select the Prompts Title.');
+		if (!_formData) {
+			_processMessage = {
+				message: 'No Request Config',
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
 			return;
 		}
 
-		const aiPromptsData = _idAndAiPromptsRecord[parseInt(_currentAiPromptsId)];
-
-		if (!aiPromptsData) {
-			alert('Please select the Prompts Title.');
-			return;
-		}
+		_processMessage = {
+			message: 'Prompts Updating...',
+			color: 'text-blue-500'
+		};
 
 		_updatePromptsLoadingYn = true;
 
 		const updateRequestData: AiPromptsUpdateRequestData = {
-			id: aiPromptsData.id,
-			userId: aiPromptsData.userId,
-			aiModelId: aiPromptsData.aiModelId,
-			title: aiPromptsData.title,
-			systemPromptsList: _systemPromptsText.split('\n'),
-			userPromptsList: _userPromptsText.split('\n'),
-			defaultYn: _defaultYn,
-			aiResponseModelsId: parseInt(_aiResponseModelsId)
+			id: Number(_formData.aiPromptsId),
+			aiModelId: Number(_formData.aiModelId),
+			title: _formData.title,
+			systemPromptsList: _formData.systemPromptsText.split('\n'),
+			userPromptsList: _formData.userPromptsText.split('\n'),
+			defaultYn: _formData.defaultYn,
+			aiResponseModelsId: parseInt(_formData.aiResponseModelsId)
 		};
+
+		const validResult = AiPromptsDataUtils.validUpdateData(updateRequestData);
+
+		if (!validResult.valid) {
+			_processMessage = {
+				message: validResult.message,
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
+			return;
+		}
 
 		const responseObject: ResponseObject<number | null> = await AiAnalyticsWebApi.updateAiPrompts(updateRequestData);
 
 		if (ResponseCode.success.code !== responseObject.code || !responseObject.data) {
-			alert(`Failed to update the prompt. ${ responseObject.message }`);
+			_processMessage = {
+				message: responseObject.message,
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
+			return;
+		}
+
+		if (!responseObject.data) {
+			_processMessage = {
+				message: 'Failed to update the prompt',
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
 			return;
 		}
 
 		const id = responseObject.data as number;
 
-		await getData(aiModelId);
+		_processMessage = {
+			message: 'Prompts Update Success',
+			color: 'text-green-500'
+		};
 
-		setTimeout(() => {
-			_updatePromptsLoadingYn = false;
-			_currentAiPromptsId = id.toString();
-			changePrompts(id);
-		}, 1000);
+		await CurrentThreadUtils.sleep(1000);
+
+		_processMessage = {
+			message: 'Prompts Data Refreshing...',
+			color: 'text-green-500'
+		};
+
+		await updateAiPromptsList();
+
+		_formData.aiPromptsId = id.toString();
+		_processMessage = undefined;
+		_updatePromptsLoadingYn = false;
+
+		aiPromptsConfigModalCallback();
 	}
 
-	function acceptPrompt() {
-		aiPromptsId = _currentAiPromptsId;
-		closeModal();
+	async function deletePrompts() {
+		if (!_formData || !_formData.aiPromptsId) {
+			_processMessage = {
+				message: 'No Request Config',
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
+			return;
+		}
+
+		_processMessage = {
+			message: 'Prompts Deleting...',
+			color: 'text-blue-500'
+		};
+
+		_deletePromptsLoadingYn = true;
+
+		const responseObject: ResponseObject<unknown> =
+			await AiAnalyticsWebApi.deleteAiPrompts(Number(_formData.aiPromptsId));
+
+		if (ResponseCode.success.code !== responseObject.code) {
+			_processMessage = {
+				message: responseObject.message,
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
+			_deletePromptsLoadingYn = false;
+			return;
+		}
+
+		if (!responseObject.data) {
+			_processMessage = {
+				message: 'Failed to delete the prompt',
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
+			_deletePromptsLoadingYn = false;
+			return;
+		}
+
+		_processMessage = {
+			message: 'Prompts Delete Success',
+			color: 'text-green-500'
+		};
+
+		await CurrentThreadUtils.sleep(1000);
+
+		_processMessage = {
+			message: 'Prompts Data Refreshing...',
+			color: 'text-green-500'
+		};
+
+		await updateAiPromptsList();
+
+		_formData.aiPromptsId = '';
+
+		await onchangeAiPromptsId();
+
+		_processMessage = undefined;
+		_deletePromptsLoadingYn = false;
+
+		aiPromptsConfigModalCallback();
 	}
 
-	async function cancelPrompt() {
-		await clearFormData();
-		closeModal();
+	async function updateAiPromptsList() {
+		const responseObject = await AiAnalyticsWebApi.getAiPromptsList(0);
+
+		if (ResponseCode.success.code !== responseObject.code) {
+			_processMessage = {
+				message: responseObject.message,
+				color: 'text-red-500'
+			};
+
+			await CurrentThreadUtils.sleep(3000);
+
+			_processMessage = undefined;
+			return;
+		}
+
+		aiPromptsList = responseObject.data as AiPromptsData[];
 	}
 
-	function closeModal() {
-		modalOpenYn = false;
+	function onChangeAi() {
+		if (!_formData) {
+			return;
+		}
+
+		_formData.aiModelId = '';
+	}
+
+	async function onchangeAiPromptsId() {
+		if (!_formData) {
+			return;
+		}
+
+		const aiPromptsId = _formData.aiPromptsId;
+
+		await setDefaultFormData();
+
+		if (!aiPromptsId) {
+			return;
+		}
+
+		const aiPromptsData = aiPromptsList.find((item) => item.id.toString() === aiPromptsId);
+
+		if (!aiPromptsData) {
+			return;
+		}
+
+		const aiModelData = aiModelList.find((item) => item.id === aiPromptsData.aiModelId);
+
+		if (!aiModelData) {
+			return;
+		}
+
+		await getAiResponseModelsList(aiModelData.id);
+
+		_formData = {
+			ai: aiModelData.aiCode,
+			aiModelId: aiModelData.id.toString(),
+			aiPromptsId: aiPromptsData.id.toString(),
+			title: aiPromptsData.title,
+			systemPromptsText: aiPromptsData.systemPromptsList.join('\n'),
+			userPromptsText: aiPromptsData.userPromptsList.join('\n'),
+			defaultYn: aiPromptsData.defaultYn,
+			aiResponseModelsId: aiPromptsData.aiResponseModelsId?.toString() || ''
+		};
+	}
+
+	function onchangeAiModelId() {
+		if (!_formData) {
+			return;
+		}
+
+		_formData.aiResponseModelsId = '';
+		getAiResponseModelsList(Number(_formData.aiModelId));
 	}
 </script>
 
 
-<Modal bind:open={modalOpenYn}
+<Modal bind:open={openModalYn}
 			 id="ai-prompt-modal"
 			 placement="top-center"
-			 size="lg"
+			 size="md"
 			 autoclose={false}
 			 class="w-full"
+			 title="Ai Prompts Configuration"
 			 classFooter="items-center justify-end">
-	<div class="flex flex-col space-y-6">
-		<h3 class="mb-4 text-xl font-medium text-gray-900 dark:text-white">
-			Request Prompt
-		</h3>
-		<Label class="space-y-2">
-			<span>Select</span>
-			<Select bind:value={_currentAiPromptsId}
-							placeholder=""
-							onchange={() => changePrompts(parseInt(_currentAiPromptsId))}>
-				<option value="">Choose Title...</option>
-				{#each Object.entries(_idAndAiPromptsRecord) as [id, aiPromptsData]}
-					<option value={id.toString()}>{aiPromptsData.title}</option>
-				{/each}
-			</Select>
-		</Label>
-		{#if !_currentAiPromptsId}
+	{#if _formData}
+		<div class="flex flex-col space-y-6">
 			<Label class="space-y-2">
-				<span>Title</span>
-				<Input type="text"
-							 bind:value={_title}
-							 placeholder="Please enter your title..."
-							 required />
+				<Select bind:value={_formData.aiPromptsId}
+								placeholder=""
+								onchange={() => onchangeAiPromptsId()}>
+					<option value="">Create Mode</option>
+					{#each aiPromptsList.sort((a, b) => a.aiModelId - b.aiModelId) as aiPrompts}
+						{@const aiModel = aiModelList.find((item) => item.id === aiPrompts.aiModelId)}
+						<option value={aiPrompts.id.toString()}>
+							{aiModel?.modelName} : {aiPrompts.title}
+						</option>
+					{/each}
+				</Select>
 			</Label>
-		{/if}
-		<Label class="space-y-2">
-			<span>System Prompts Text</span>
-			<Textarea
-				rows={10}
-				cols={30}
-				bind:value={_systemPromptsText}
-				placeholder="Please Set system Role prompt..."
-				required />
-		</Label>
-		<Label class="space-y-2">
-			<span>Question Prompts Text</span>
-			<Textarea
-				rows={5}
-				cols={10}
-				bind:value={_userPromptsText}
-				placeholder="Please enter your question Prompts..."
-				required />
-		</Label>
-		<Label class="space-y-2">
-			<Checkbox checked={_defaultYn}
-								onchange={() => _defaultYn = !_defaultYn}>
-				Default Prompt
-			</Checkbox>
-		</Label>
-		<Label class="space-y-2">
-			<span>Response Model</span>
-			<Select bind:value={_aiResponseModelsId}
-							placeholder="">
-				<option value="">Choose Response Model...</option>
-				{#each Object.entries(_idAndAiResponseModelsRecord) as [id, aiResponseModels]}
-					<option value={id}>{aiResponseModels.title}</option>
-				{/each}
-			</Select>
-		</Label>
-	</div>
+
+			<div class="grid grid-cols-2 gap-2">
+				<Label class="space-y-2">
+					<div class="text-sm">AI</div>
+					<Select
+						bind:value={_formData.ai}
+						placeholder=""
+						onchange={onChangeAi}
+						class="w-full">
+						{#each Object.values(AIModelCode) as ai}
+							<option value={ai.code}>{ai.name}</option>
+						{/each}
+					</Select>
+				</Label>
+				<Label class="space-y-2">
+					<span>AI Model</span>
+					<Select bind:value={_formData.aiModelId}
+									placeholder=""
+									onchange={onchangeAiModelId}>
+						<option value="">Choose AI Model...</option>
+						{#each aiModelList as aiModel}
+							<option value={aiModel.id.toString()}>{aiModel.modelName}</option>
+						{/each}
+					</Select>
+				</Label>
+			</div>
+
+			<div class="grid grid-cols-2 gap-2">
+				<Label class="space-y-2">
+					<span>Title</span>
+					<Input type="text"
+								 bind:value={_formData.title}
+								 placeholder="Please enter your title..."
+								 required />
+				</Label>
+				<Label class="space-y-2">
+					<span>Response Model</span>
+					<Select bind:value={_formData.aiResponseModelsId}
+									placeholder="">
+						<option value="">Choose Response Model...</option>
+						{#each Object.entries(_idAndAiResponseModelsRecord) as [id, aiResponseModels]}
+							<option value={id}>{aiResponseModels.title}</option>
+						{/each}
+					</Select>
+				</Label>
+			</div>
+
+			<Label class="space-y-2">
+				<span>System Prompts Text</span>
+				<Textarea
+					rows={10}
+
+					bind:value={_formData.systemPromptsText}
+					placeholder="Please Set system Role prompt..."
+					required />
+			</Label>
+			<Label class="space-y-2">
+				<span>Question Prompts Text</span>
+				<Textarea
+					rows={5}
+
+					bind:value={_formData.userPromptsText}
+					placeholder="Please enter your question Prompts..."
+					required />
+			</Label>
+			<Label class="space-y-2">
+				<Checkbox checked={_formData.defaultYn}>
+					Default Prompt
+				</Checkbox>
+			</Label>
+
+			{#if _processMessage}
+				<div class="h-5">
+				</div>
+				<div class="text-end items-end absolute right-4 bottom-24 {_processMessage.color}">
+					{_processMessage.message}
+				</div>
+			{/if}
+		</div>
+	{/if}
 	<svelte:fragment slot="footer">
 		<div class="flex w-full items-center justify-between">
-			{#if _currentAiPromptsId}
-				<Button type="button"
-								class="w-full1"
-								disabled={_currentAiPromptsId === ''}
-								onclick={async () => updatePrompts()}>
-					Update Your Prompt
-					{#if _updatePromptsLoadingYn}
-						<Spinner class="w-5 h-5 ml-2" />
-					{/if}
-				</Button>
+			<Button type="button"
+							color="alternative"
+							onclick={closeModal}>
+				Close
+			</Button>
+			{#if _formData?.aiPromptsId}
+				<div class="">
+					<Button
+						type="button"
+						color="red"
+						onclick={async () => deletePrompts()}>
+						Delete
+						{#if _deletePromptsLoadingYn}
+							<Spinner class="w-4 h-4 ml-2" />
+						{/if}
+					</Button>
+					<Button type="button"
+									disabled={!_formData.aiPromptsId}
+									onclick={async () => updatePrompts()}>
+						Update Your Prompt
+						{#if _updatePromptsLoadingYn}
+							<Spinner class="w-4 h-4 ml-2" />
+						{/if}
+					</Button>
+				</div>
 			{:else }
 				<Button type="button"
 								class="w-full1"
 								color="green"
 								onclick={async () => createPrompts()}>
 					Create Your Prompt
-					{#if _updatePromptsLoadingYn}
-						<Spinner class="w-5 h-5 ml-2" />
+					{#if _createPromptsLoadingYn}
+						<Spinner class="w-4 h-4 ml-2" />
 					{/if}
 				</Button>
 			{/if}
-			<div class="">
-				<Button type="button"
-								class="w-full1"
-								onclick={acceptPrompt}>
-					Accept
-				</Button>
-				<Button type="button"
-								class="w-full1"
-								color="alternative"
-								onclick={cancelPrompt}>
-					UnSet
-				</Button>
-			</div>
 		</div>
 	</svelte:fragment>
 </Modal>

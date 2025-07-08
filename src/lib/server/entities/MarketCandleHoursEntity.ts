@@ -1,7 +1,8 @@
 import type { CandleData } from '$lib/common/models/CandleData';
 import { CurrentDateUtils } from '$lib/common/utils/CurrentDateUtils';
 
-export interface MarketCandleDaysEntity {
+export interface MarketCandleHoursEntity {
+	id: number;
 	timestamp: number;
 	market: string;
 	candle_date_time_utc: Date;
@@ -12,14 +13,10 @@ export interface MarketCandleDaysEntity {
 	trade_price: number;
 	candle_acc_trade_price: number;
 	candle_acc_trade_volume: number;
-	prev_closing_price: number;
-	change_price: number;
-	change_rate: number;
-	converted_trade_price: number | undefined;
 }
 
-export const MarketCandleDaysEntityUtils = {
-	toCandleData: (data: MarketCandleDaysEntity): CandleData => {
+export const MarketCandleHoursEntityUtils = {
+	toCandleData: (data: MarketCandleHoursEntity): CandleData => {
 		return {
 			timestamp: data.timestamp,
 			market: data.market,
@@ -31,11 +28,11 @@ export const MarketCandleDaysEntityUtils = {
 			tradePrice: data.trade_price,
 			candleAccTradePrice: data.candle_acc_trade_price,
 			candleAccTradeVolume: data.candle_acc_trade_volume,
-			prevClosingPrice: data.prev_closing_price,
-			changePrice: data.change_price,
-			changeRate: data.change_rate,
+			prevClosingPrice: undefined,
+			changePrice: undefined,
+			changeRate: undefined,
 			unit: undefined,
-			convertedTradePrice: data.converted_trade_price,
+			convertedTradePrice: undefined,
 			firstDayOfPeriod: undefined
 		};
 	}

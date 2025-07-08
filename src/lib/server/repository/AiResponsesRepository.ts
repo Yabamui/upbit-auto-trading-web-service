@@ -1,12 +1,50 @@
-import type { AiResponsesEntity } from '$lib/server/entities/AiResponsesEntity';
+import type {
+	AiLatestInferenceEntity,
+	AiResponsesEntity
+} from '$lib/server/entities/AiResponsesEntity';
 import { connectToDB } from '$lib/server/config/PGConfig';
+import { LoggingUtils } from '$lib/common/utils/LoggingUtils';
 
 export const AiResponsesRepository = {
-	insertAiResponses: insertAiResponses,
-	deleteAiResponses: deleteAiResponses,
+	findTopByUserIdAndIdAndMarket: findTopByUserIdAndIdAndMarket,
 	findAllByUserIdAndMarket: findAllByUserIdAndMarket,
-	findAllByTodayInference: findAllByTodayInference,
+	findAllByUserIdAndRowNumber: findAllByUserIdAndRowNumber,
+	findAllLatestByUserIdAndMarketLikeAndCandleUnitAndCandleTimeZone:
+		findAllLatestByUserIdAndMarketLikeAndCandleUnitAndCandleTimeZone,
+	findAllLatestByUserIdAndMarketAndCandleUnitAndCandleTimeZone:
+		findAllLatestByUserIdAndMarketAndCandleUnitAndCandleTimeZone,
+	insertAiResponses: insertAiResponses,
+	deleteAiResponses: deleteAiResponses
 };
+
+async function findTopByUserIdAndIdAndMarket(
+	userId: number,
+	aiResponsesId: number,
+	market: string
+): Promise<AiResponsesEntity | null> {
+	const dbConn = await connectToDB();
+	const query = `
+      select *
+      from ai_responses
+      where true
+        and deleted_at is null
+        and user_id = $1
+        and id = $2
+        and market = $3
+      order by id desc
+      limit 1;`;
+
+	try {
+		const result = await dbConn.query(query, [userId, aiResponsesId, market]);
+
+		return result.rows[0];
+	} catch (error) {
+		LoggingUtils.error('AiResponsesRepository.findTopByUserIdAndIdAndMarket', `${error}`);
+		return null;
+	} finally {
+		dbConn.release();
+	}
+}
 
 async function findAllByUserIdAndMarket(
 	userId: number,
@@ -27,60 +65,196 @@ async function findAllByUserIdAndMarket(
 
 		return result.rows;
 	} catch (error) {
-		console.error('### AiResponsesRepository.findAllByUserIdAndMarket Error: ' + error);
+		LoggingUtils.error('AiResponsesRepository.findAllByUserIdAndMarket', `${error}`);
 		return [];
 	} finally {
 		dbConn.release();
 	}
 }
 
-async function findAllByTodayInference(
+async function findAllByUserIdAndRowNumber(
 	userId: number,
-	candleType: string,
-	today: string
-) {
-	console.log(candleType);
+	marketCurrency: string,
+	candleUnit: string,
+	candleTimeZone: string
+): Promise<AiResponsesEntity[]> {
 	const dbConn = await connectToDB();
+
 	const query = `
-      select mi.market,
-             mi.korean_name,
-             analytics.created_at,
-             analytics.candle_type,
-             date,
-             time,
-             judgement_basis_kr,
-             evaluation,
-             open_price,
-             close_price,
-             high_price,
-             low_price
-      from (select market,
-                   created_at,
-                   candle_type,
-                   a ->> 'date'::varchar              as date,
-                   a ->> 'time'::varchar              as time,
-                   a ->> 'judgementBasis'::varchar   as judgement_basis,
-                   a ->> 'judgementBasisKr'::varchar as judgement_basis_kr,
-                   a ->> 'evaluation'::varchar       as evaluation,
-                   (a ->> 'openPrice')::float        as open_price,
-                   (a ->> 'closePrice')::float       as close_price,
-                   (a ->> 'highPrice')::float        as high_price,
-                   (a ->> 'lowPrice')::float         as low_price
-            from ai_responses,
-                 json_array_elements(response -> 'items') a
-            where deleted_at is null
-              and user_id = $1
-              and candle_type = $2
-              and (a ->> 'date')::varchar = $3) as analytics
-               join market_info mi on analytics.market = mi.market
-      order by market, created_at desc;`;
+      with summary as
+               (select *,
+                       row_number() over (partition by market order by updated_at desc ) as row_number
+                from ai_responses
+                where true
+                  and deleted_at is null
+                  and user_id = $1
+                  and candle_unit = $2
+                  and market like $3
+                  and candle_time_zone = $4)
+      select *
+      from summary
+      where true
+        and row_number = 1`;
 
 	try {
-		const result = await dbConn.query(query, [userId, candleType, today]);
+		const result = await dbConn.query(query, [
+			userId,
+			candleUnit,
+			`${marketCurrency}%`,
+			candleTimeZone
+		]);
 
-		return result.rows;
+		return result.rows as AiResponsesEntity[];
 	} catch (error) {
-		console.error('### AiResponsesRepository.findAllByTodayInference Error: ' + error);
+		LoggingUtils.error('AiResponsesRepository.findAllByUserIdAndRowNumber', `${error}`);
+		return [];
+	} finally {
+		dbConn.release();
+	}
+}
+
+async function findAllLatestByUserIdAndMarketLikeAndCandleUnitAndCandleTimeZone(
+	userId: number,
+	marketCurrency: string,
+	candleUnit: string,
+	candleTimeZone: string,
+	nowDateUtc: string
+): Promise<AiLatestInferenceEntity[]> {
+	const dbConn = await connectToDB();
+
+	const query = `
+      with query_result as
+               (select ar.id,
+                       ar.user_id,
+                       ar.market,
+                       ar.ai_model_id,
+                       ar.ai_prompts_id,
+                       ar.ai_response_models_id,
+                       ar.candle_unit,
+                       ar.candle_count,
+                       ar.candle_time_zone,
+                       ar.candle_date_time_begin,
+                       ar.candle_date_time_end,
+                       ar.created_at,
+                       ar.updated_at,
+                       ar.response -> 'totalJudgement'   as total_judgement,
+                       ar.response -> 'totalJudgementKr' as total_judgement_kr,
+                       jsonItems ->> 'date'              as date,
+                       jsonItems ->> 'time'              as time,
+                       jsonItems ->> 'lowPrice'          as low_price,
+                       jsonItems ->> 'highPrice'         as high_price,
+                       jsonItems ->> 'openPrice'         as open_price,
+                       jsonItems ->> 'closePrice'        as close_price,
+                       jsonItems ->> 'evaluation'        as evaluation,
+                       jsonItems ->> 'judgementBasis'    as judgement_basis,
+                       jsonItems ->> 'judgementBasisKr'  as judgement_basis_kr,
+                       row_number() over (
+                           partition by ar.market, jsonItems ->> 'date' order by ar.id desc
+                           )                             as rn
+                from ai_responses ar,
+                     jsonb_array_elements(ar.response -> 'items') as jsonItems
+                where true
+                  and ar.deleted_at is null
+                  and ar.user_id = $1
+                  and ar.market like $2
+                  and ar.candle_unit = $3
+                  and ar.candle_time_zone = $4
+                  and (jsonItems ->> 'date')::varchar >= $5)
+      select *
+      from query_result
+      where rn = 1
+      ;`;
+
+	try {
+		const result = await dbConn.query(query, [
+			userId,
+			`${marketCurrency}%`,
+			candleUnit,
+			candleTimeZone,
+			nowDateUtc
+		]);
+
+		return result.rows as AiLatestInferenceEntity[];
+	} catch (error) {
+		LoggingUtils.error(
+			'AiResponsesRepository.findAllLatestByUserIdAndMarketLikeAndCandleUnitAndCandleTimeZone',
+			`${error}`
+		);
+
+		return [];
+	} finally {
+		dbConn.release();
+	}
+}
+
+async function findAllLatestByUserIdAndMarketAndCandleUnitAndCandleTimeZone(
+	userId: number,
+	market: string,
+	candleUnit: string,
+	candleTimeZone: string,
+	nowDateUtc: string
+): Promise<AiLatestInferenceEntity[]> {
+	const dbConn = await connectToDB();
+	
+	const query = `
+      with query_result as
+               (select ar.id,
+                       ar.user_id,
+                       ar.market,
+                       ar.ai_model_id,
+                       ar.ai_prompts_id,
+                       ar.ai_response_models_id,
+                       ar.candle_unit,
+                       ar.candle_count,
+                       ar.candle_time_zone,
+                       ar.candle_date_time_begin,
+                       ar.candle_date_time_end,
+                       ar.created_at,
+                       ar.updated_at,
+                       ar.response -> 'totalJudgement'   as total_judgement,
+                       ar.response -> 'totalJudgementKr' as total_judgement_kr,
+                       jsonItems ->> 'date'              as date,
+                       jsonItems ->> 'time'              as time,
+                       jsonItems ->> 'lowPrice'          as low_price,
+                       jsonItems ->> 'highPrice'         as high_price,
+                       jsonItems ->> 'openPrice'         as open_price,
+                       jsonItems ->> 'closePrice'        as close_price,
+                       jsonItems ->> 'evaluation'        as evaluation,
+                       jsonItems ->> 'judgementBasis'    as judgement_basis,
+                       jsonItems ->> 'judgementBasisKr'  as judgement_basis_kr,
+                       row_number() over (
+                           partition by ar.market, jsonItems ->> 'date' order by ar.id desc
+                           )                             as rn
+                from ai_responses ar,
+                     jsonb_array_elements(ar.response -> 'items') as jsonItems
+                where true
+                  and ar.deleted_at is null
+                  and ar.user_id = $1
+                  and ar.market = $2
+                  and ar.candle_unit = $3
+                  and ar.candle_time_zone = $4
+                  and (jsonItems ->> 'date')::varchar >= $5)
+      select *
+      from query_result
+      where rn = 1
+      ;`;
+	
+	try {
+		const result = await dbConn.query(query, [
+			userId,
+			market,
+			candleUnit,
+			candleTimeZone,
+			nowDateUtc
+		]);
+		
+		return result.rows as AiLatestInferenceEntity[];
+	} catch (error) {
+		LoggingUtils.error(
+			'AiResponsesRepository.findAllLatestByUserIdAndMarketLikeAndCandleUnitAndCandleTimeZone',
+			`${error}`
+		);
+		
 		return [];
 	} finally {
 		dbConn.release();
@@ -94,11 +268,11 @@ async function insertAiResponses(
 	aiPromptsId: number,
 	aiResponseModesId: number | null,
 	response: object,
-	candleType: string,
+	candleUnit: string,
 	candleCount: number,
 	candleTimeZone: string,
-	candleDateTimeKstBegin: string,
-	candleDateTimeKstEnd: string
+	candleDateTimeBegin: string,
+	candleDateTimeEnd: string
 ): Promise<AiResponsesEntity | null> {
 	const dbConn = await connectToDB();
 
@@ -110,11 +284,11 @@ async function insertAiResponses(
        ai_prompts_id,
        ai_response_models_id,
        response,
-       candle_type,
+       candle_unit,
        candle_count,
        candle_time_zone,
-       candle_date_time_kst_begin,
-       candle_date_time_kst_end)
+       candle_date_time_begin,
+       candle_date_time_end)
       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
       returning *;`;
 
@@ -126,16 +300,16 @@ async function insertAiResponses(
 			aiPromptsId,
 			aiResponseModesId,
 			response,
-			candleType,
+			candleUnit,
 			candleCount,
 			candleTimeZone,
-			candleDateTimeKstBegin,
-			candleDateTimeKstEnd
+			candleDateTimeBegin,
+			candleDateTimeEnd
 		]);
 
 		return result.rows[0];
 	} catch (error) {
-		console.error('### AiResponsesRepository.insert Error: ' + error);
+		LoggingUtils.error('AiResponsesRepository.insertAiResponses', `${error}`);
 		return null;
 	} finally {
 		dbConn.release();
@@ -144,7 +318,7 @@ async function insertAiResponses(
 
 async function deleteAiResponses(userId: number, id: number): Promise<boolean> {
 	const dbConn = await connectToDB();
-	
+
 	const query = `
       update ai_responses
       set deleted_at = now()
@@ -155,7 +329,7 @@ async function deleteAiResponses(userId: number, id: number): Promise<boolean> {
 		await dbConn.query(query, [userId, id]);
 		return true;
 	} catch (error) {
-		console.error('### AiResponsesRepository.deletedAiResponses Error: ' + error);
+		LoggingUtils.error('AiResponsesRepository.deleteAiResponses', `${error}`);
 		return false;
 	} finally {
 		dbConn.release();

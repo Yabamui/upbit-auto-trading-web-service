@@ -4,7 +4,7 @@ import { ResponseCode } from '$lib/common/enums/ResponseCode';
 import { ResponseObject } from '$lib/common/models/ResponseData';
 
 const defaultHeaders = {
-	timeout: 1000 * 60
+	timeout: 1000 * 30
 };
 
 export const WebApiRequestUtils = {

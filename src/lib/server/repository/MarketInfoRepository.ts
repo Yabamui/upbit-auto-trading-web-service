@@ -14,7 +14,12 @@ export const MarketInfoRepository = {
 async function findTopByMarket(code: string) {
 	const dbConn = await connectToDB();
 
-	const query = 'SELECT * FROM market_info WHERE market = $1';
+	const query = `
+      SELECT *
+      FROM market_info
+      WHERE TRUE
+        AND deleted_at IS NULL
+        AND market = $1`;
 
 	try {
 		const result = await dbConn.query(query, [code]);
@@ -35,7 +40,12 @@ async function findTopByMarket(code: string) {
 async function findAllBy() {
 	const dbConn = await connectToDB();
 
-	const query = 'SELECT * FROM market_info WHERE true ORDER BY id';
+	const query = `
+      SELECT *
+      FROM market_info
+      WHERE true
+      AND deleted_at IS NULL
+      ORDER BY id`;
 
 	try {
 		const result = await dbConn.query(query);
@@ -56,10 +66,17 @@ async function findAllBy() {
 async function findAllByMarketLike(market: string) {
 	const dbConn = await connectToDB();
 
-	const query = 'SELECT * FROM market_info WHERE market LIKE $1';
+	const query = `
+      SELECT *
+      FROM market_info
+      WHERE TRUE
+        AND deleted_at IS NULL
+        AND market LIKE $1`;
+	
+	const marketCurrency = `${market}%`;
 
 	try {
-		const result = await dbConn.query(query, [market]);
+		const result = await dbConn.query(query, [marketCurrency]);
 
 		if (!result || result.rowCount === 0) {
 			return [];
@@ -77,7 +94,12 @@ async function findAllByMarketLike(market: string) {
 async function findAllByMarketIn(marketList: string[]) {
 	const dbConn = await connectToDB();
 
-	const query = 'SELECT * FROM market_info WHERE market = any($1)';
+	const query = `
+      SELECT *
+      FROM market_info
+      WHERE TRUE
+        AND deleted_at IS NULL
+        AND market = any ($1)`;
 
 	try {
 		const queryResult = await dbConn.query(query, [marketList]);
@@ -94,6 +116,8 @@ async function findAllByMarketIn(marketList: string[]) {
 		dbConn.release();
 	}
 }
+
+
 
 async function saveAll(marketData: UMarketData[]) {
 	const marketInfoEntityList: MarketInfoEntity[] = await MarketInfoRepository.findAllBy();

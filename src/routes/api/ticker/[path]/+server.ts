@@ -1,10 +1,9 @@
-import { json } from '@sveltejs/kit';
 import { ResponseCode } from '$lib/common/enums/ResponseCode';
-import { ResponseObject } from '$lib/common/models/ResponseData';
 import { UPBitApi } from '$lib/server/external-api/UPBitApi';
 import { ResponseUtils } from '$lib/common/utils/ResponseUtils';
 import { TickerDataUtils } from '$lib/common/models/TickerData';
 import { ApiPathCode } from '$lib/common/enums/ApiPathCode';
+import { TickerService } from '$lib/server/service/TickerService';
 
 export const GET = async ({ params, url }) => {
 	const path = params.path;
@@ -17,9 +16,7 @@ export const GET = async ({ params, url }) => {
 		return await getTickerListByMarketCodeList(url);
 	}
 
-	return json(ResponseObject.of(ResponseCode.wrongParameter), {
-		status: ResponseCode.wrongParameter.status
-	});
+	return ResponseUtils.error(ResponseCode.wrongParameter);
 };
 
 async function getTickerListByMarketCurrency(url: URL) {
@@ -29,13 +26,7 @@ async function getTickerListByMarketCurrency(url: URL) {
 		return ResponseUtils.error(ResponseCode.wrongParameter);
 	}
 
-	const response = await UPBitApi.getTickerAll(currencies);
-	
-	if (response?.length === 0) {
-		return ResponseUtils.error(ResponseCode.notFound, []);
-	}
-
-	const tickerList = response.map((item) => TickerDataUtils.toTickerData(item));
+	const tickerList = await TickerService.getTickerListByMarketCurrency(currencies);
 
 	return ResponseUtils.ok(tickerList);
 }

@@ -1,11 +1,108 @@
 import { test } from 'vitest';
+import { UPBitCandleTimeZones, UPBitCandleUnitEnum } from '$lib/common/enums/UPBitCandleEnum';
+import { ProphetAnalyticsPriceTypeEnum } from '$lib/common/enums/ProphetAnalyticsPriceTypeEnum';
+import { CurrentNumberUtils } from '$lib/common/utils/CurrentNumberUtils';
+import Decimal from 'decimal.js';
+import type { ProphetAnalyticsResultEntity } from '$lib/server/entities/ProphetAnalyticsResultEntity';
+import { ProphetAnalyticsResultRepository } from '$lib/server/repository/ProphetAnalyticsResultRepository';
+import type { ProphetAnalyticsResultItemEntity } from '$lib/server/entities/ProphetAnalyticsResultItemEntity';
+import { ProphetAnalyticsResultItemRepository } from '$lib/server/repository/ProphetAnalyticsResultItemRepository';
+import moment from 'moment';
 
-test('prophet analytics service', async () => {
-	const headers = ["","ds","trend","cap","yhat_lower","yhat_upper","trend_lower","trend_upper","Christmas Day","Christmas Day_lower","Christmas Day_upper","Christmas Day (observed)","Christmas Day (observed)_lower","Christmas Day (observed)_upper","Columbus Day","Columbus Day_lower","Columbus Day_upper","Independence Day","Independence Day_lower","Independence Day_upper","Independence Day (observed)","Independence Day (observed)_lower","Independence Day (observed)_upper","Juneteenth National Independence Day","Juneteenth National Independence Day_lower","Juneteenth National Independence Day_upper","Juneteenth National Independence Day (observed)","Juneteenth National Independence Day (observed)_lower","Juneteenth National Independence Day (observed)_upper","Labor Day","Labor Day_lower","Labor Day_upper","Martin Luther King Jr. Day","Martin Luther King Jr. Day_lower","Martin Luther King Jr. Day_upper","Memorial Day","Memorial Day_lower","Memorial Day_upper","New Year's Day","New Year's Day_lower","New Year's Day_upper","New Year's Day (observed)","New Year's Day (observed)_lower","New Year's Day (observed)_upper","Thanksgiving","Thanksgiving_lower","Thanksgiving_upper","Veterans Day","Veterans Day_lower","Veterans Day_upper","Veterans Day (observed)","Veterans Day (observed)_lower","Veterans Day (observed)_upper","Washington's Birthday","Washington's Birthday_lower","Washington's Birthday_upper","daily","daily_lower","daily_upper","holidays","holidays_lower","holidays_upper","monthly","monthly_lower","monthly_upper","multiplicative_terms","multiplicative_terms_lower","multiplicative_terms_upper","weekly","weekly_lower","weekly_upper","yearly","yearly_lower","yearly_upper","additive_terms","additive_terms_lower","additive_terms_upper","yhat"];
-	const data = ["54838","2024-01-01 01:00:00","53997708.30946641","160000000","55136738.72241249","60956219.05664807","53997708.30946641","53997708.30946641","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","-0.0208949","-0.0208949","-0.0208949","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0","0.0004923503337493311","0.0004923503337493311","0.0004923503337493311","-0.0208949","-0.0208949","-0.0208949","-0.013259436543034044","-0.013259436543034044","-0.013259436543034044","0.07120800130277923","0.07120800130277923","0.07120800130277923","-0.0024805118027363556","-0.0024805118027363556","-0.0024805118027363556","0.10735049931480029","0.10735049931480029","0.10735049931480029","0.0","0.0","0.0","57842777.19311398"];
+test('', async () => {
+	const price = new Decimal(0.3);
+	const before = new Decimal(0.2);
+
+	const result = price.minus(before).dividedBy(before.abs()).mul(100);
+
+	console.log(result);
 	
-	for (let i = 0; i < headers.length; i++) {
-		console.log(`${headers[i]}: ${data[i]}`);
-	}
-	
-}, {timeout: 1000 * 60 * 5});
+}, { timeout: 1000 * 60 * 5 });
+
+test(
+	'prophet analytics service',
+	async () => {
+		const userId = 1;
+		const market = 'KRW-BTT';
+		const candleUnit = UPBitCandleUnitEnum.days.key;
+		const candleTimeZone = UPBitCandleTimeZones.utc;
+		const priceType = ProphetAnalyticsPriceTypeEnum.CLOSE_PRICE.key;
+
+		const resultEntity: ProphetAnalyticsResultEntity | null =
+			await ProphetAnalyticsResultRepository.findTopByUserIdAndMarketOrderByIdDesc(
+				userId,
+				market,
+				candleUnit,
+				candleTimeZone,
+				priceType
+			);
+
+		if (!resultEntity) {
+			console.log('No result');
+			return;
+		}
+
+		console.log('resultEntity id : ', resultEntity.id);
+
+		const resultItemEntities: ProphetAnalyticsResultItemEntity[] =
+			await ProphetAnalyticsResultItemRepository.findAllByUserIdAndResultId(
+				userId,
+				resultEntity.id
+			);
+
+		if (resultItemEntities.length === 0) {
+			console.log('No result items');
+			return;
+		}
+
+		console.log(resultItemEntities.length);
+
+		let diffRateTotal = new Decimal(0);
+		let diffRateTotalCount = 0;
+		let diffRateHigh = new Decimal(0);
+		let diffRateHighCount = 0;
+		let diffRateLow = new Decimal(0);
+		let diffRateLowCount = 0;
+
+		for (const resultItemEntity of resultItemEntities) {
+			if (!resultItemEntity.y) {
+				continue;
+			}
+
+			const currentDiffRate = new Decimal(
+				CurrentNumberUtils.calculateRate(resultItemEntity.yhat, resultItemEntity.y)
+			)
+				.mul(1000)
+				.round()
+				.dividedBy(1000)
+				.toNumber();
+
+			diffRateTotal = diffRateTotal.add(currentDiffRate);
+			diffRateTotalCount += 1;
+
+			if (currentDiffRate > 0) {
+				diffRateHigh = diffRateHigh.add(currentDiffRate);
+				diffRateHighCount += 1;
+			} else if (currentDiffRate < 0) {
+				diffRateLow = diffRateLow.add(currentDiffRate);
+				diffRateLowCount += 1;
+			}
+		}
+
+		const diffAvg = diffRateTotal.dividedBy(diffRateTotalCount);
+		const diffHighAvg = diffRateHigh.dividedBy(diffRateHighCount);
+		const diffLowAvg = diffRateLow.dividedBy(diffRateLowCount);
+
+		console.log('diffRateTotal', diffRateTotal);
+		console.log('diffRateTotalCount', diffRateTotalCount);
+		console.log('diffRateHigh', diffRateHigh);
+		console.log('diffRateHighCount', diffRateHighCount);
+		console.log('diffRateLow', diffRateLow);
+		console.log('diffRateLowCount', diffRateLowCount);
+
+		console.log('diffAvg', diffAvg);
+		console.log('diffHighAvg', diffHighAvg);
+		console.log('diffLowAvg', diffLowAvg);
+	},
+	{ timeout: 1000 * 60 * 5 }
+);

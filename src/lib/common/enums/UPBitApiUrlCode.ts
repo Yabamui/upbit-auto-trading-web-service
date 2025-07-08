@@ -43,6 +43,16 @@ export const UPBitApiUrlCode = {
 		url: 'https://api.upbit.com/v1/candles/years',
 		title: '년(Year) 캔들',
 		description: '년 단위로 봉 데이터를 반환한다.'
+	},
+	orderBook: {
+		url: 'https://api.upbit.com/v1/orderbook',
+		title: '호가 정보',
+		description: '호가 정보 조회 (원화마켓만 지원)',
+	},
+	orderBookSupportedLevels: {
+		url: 'https://api.upbit.com/v1/orderbook/supported_levels',
+		title: '호가 모아보기 단위 정보 조회',
+		description: '호가 모아보기 단위 정보 조회 (원화마켓만 지원)',
 	}
 };
 
